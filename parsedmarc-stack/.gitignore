@@ -1,0 +1,4 @@
+.env
+credentials/
+influxdb/data/
+grafana/data/

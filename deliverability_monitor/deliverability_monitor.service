@@ -1,0 +1,31 @@
+[Unit]
+Description=Pintel Deliverability Monitor
+After=network-online.target influxdb.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/deliverability_monitor
+Environment="PYTHONPATH=/opt/deliverability_monitor"
+EnvironmentFile=/opt/deliverability_monitor/.env
+ExecStart=/opt/domain_health/deliverability_monitor/.venv/bin/python /opt/domain_health/deliverability_monitor/scheduler.py
+Restart=on-failure
+RestartSec=30
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=deliverability-monitor
+
+# Prevent runaway restarts
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Install]
+WantedBy=multi-user.target
+
+# ── Deploy steps ────────────────────────────────────────────────────────────
+# sudo cp deliverability_monitor.service /etc/systemd/system/
+# sudo systemctl daemon-reload
+# sudo systemctl enable deliverability_monitor
+# sudo systemctl start deliverability_monitor
+# sudo journalctl -u deliverability_monitor -f

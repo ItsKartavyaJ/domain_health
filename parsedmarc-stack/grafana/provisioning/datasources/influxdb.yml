@@ -1,0 +1,32 @@
+apiVersion: 1
+
+datasources:
+  - name: InfluxDB-DMARC
+    type: influxdb
+    access: proxy
+    url: http://influxdb:8086
+    isDefault: true
+    jsonData:
+      version: Flux
+      organization: ${INFLUXDB_ORG}
+      defaultBucket: ${INFLUXDB_DMARC_BUCKET}
+      tlsSkipVerify: false
+    secureJsonData:
+      token: ${INFLUXDB_TOKEN}
+    editable: false
+
+  # Second datasource pointing at the deliverability bucket
+  # so Grafana can show both DMARC reports and deliverability metrics
+  - name: InfluxDB-Deliverability
+    type: influxdb
+    access: proxy
+    url: http://influxdb:8086
+    isDefault: false
+    jsonData:
+      version: Flux
+      organization: ${INFLUXDB_ORG}
+      defaultBucket: deliverability
+      tlsSkipVerify: false
+    secureJsonData:
+      token: ${INFLUXDB_TOKEN}
+    editable: false

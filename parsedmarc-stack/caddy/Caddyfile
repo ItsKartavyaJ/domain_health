@@ -1,0 +1,26 @@
+# Caddyfile — auto-TLS via Let's Encrypt
+# Domains must point to your GCP VM: 34.44.125.78
+# GCP firewall must allow TCP 80 and 443 inbound
+
+# DMARC Grafana dashboard
+dmarc.pintel.ai {
+    reverse_proxy grafana:3000
+    encode gzip
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options nosniff
+        X-Frame-Options SAMEORIGIN
+        -Server
+    }
+}
+
+# InfluxDB API (for deliverability_monitor on the host + React dashboard)
+# Protected by InfluxDB's own token auth — safe to expose via HTTPS
+influx.pintel.ai {
+    reverse_proxy influxdb:8086
+    encode gzip
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        -Server
+    }
+}

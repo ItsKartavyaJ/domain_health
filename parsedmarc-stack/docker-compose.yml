@@ -1,0 +1,164 @@
+version: "3.9"
+
+# ── Pintel DMARC Stack ────────────────────────────────────────────────────────
+# Services:
+#   parsedmarc  — parses DMARC reports from Gmail inbox → writes to InfluxDB
+#   influxdb    — time-series DB (shared with deliverability_monitor)
+#   grafana     — DMARC dashboards (your React dashboard reads InfluxDB directly)
+#   caddy       — reverse proxy: dmarc.pintel.ai → Grafana, influx.pintel.ai → InfluxDB
+#
+# GCP VM: 34.44.125.78  us-central1-f
+# All data persisted in named Docker volumes.
+# Run: docker compose up -d
+
+services:
+
+  # ── parsedmarc ─────────────────────────────────────────────────────────────
+  parsedmarc:
+    build:
+      context: ./parsedmarc
+      dockerfile: Dockerfile
+    container_name: parsedmarc
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # ── General ──────────────────────────────────────────────────────────
+      PARSEDMARC_GENERAL_SAVE_AGGREGATE: "true"
+      PARSEDMARC_GENERAL_SAVE_FORENSIC: "true"
+      PARSEDMARC_GENERAL_SILENT: "false"
+      PARSEDMARC_GENERAL_DEBUG: "false"
+
+      # ── Mailbox watch settings ────────────────────────────────────────────
+      PARSEDMARC_MAILBOX_WATCH: "true"
+      PARSEDMARC_MAILBOX_DELETE: "false"          # archive, don't delete
+      PARSEDMARC_MAILBOX_BATCH_SIZE: "10"
+      PARSEDMARC_MAILBOX_CHECK_TIMEOUT: "30"
+      PARSEDMARC_MAILBOX_REPORTS_FOLDER: "INBOX"
+      PARSEDMARC_MAILBOX_ARCHIVE_FOLDER: "Archive"
+
+      # ── IMAP auth (Gmail app password) ────────────────────────────────────
+      # Enable IMAP in Gmail mailbox settings and use a generated app password.
+      PARSEDMARC_IMAP_HOST: "${DMARC_IMAP_HOST}"
+      PARSEDMARC_IMAP_PORT: "${DMARC_IMAP_PORT}"
+      PARSEDMARC_IMAP_SSL: "true"
+      PARSEDMARC_IMAP_USER: "${DMARC_MAILBOX_USER}"
+      PARSEDMARC_IMAP_PASSWORD: "${DMARC_MAILBOX_APP_PASSWORD}"
+
+      # ── InfluxDB v2 output ────────────────────────────────────────────────
+      # parsedmarc supports InfluxDB via the [influxdb] section.
+      # We pass everything via env vars so secrets never touch the filesystem.
+      PARSEDMARC_INFLUXDB_HOST: "influxdb"
+      PARSEDMARC_INFLUXDB_PORT: "8086"
+      PARSEDMARC_INFLUXDB_SSL: "false"
+      PARSEDMARC_INFLUXDB_TOKEN: "${INFLUXDB_TOKEN}"
+      PARSEDMARC_INFLUXDB_ORG: "${INFLUXDB_ORG}"
+      PARSEDMARC_INFLUXDB_BUCKET: "${INFLUXDB_DMARC_BUCKET}"
+
+    depends_on:
+      influxdb:
+        condition: service_healthy
+    networks:
+      - dmarc_net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ── InfluxDB v2 ────────────────────────────────────────────────────────────
+  influxdb:
+    image: influxdb:2.7-alpine
+    container_name: influxdb
+    restart: unless-stopped
+    ports:
+      - "8086:8086"         # exposed for deliverability_monitor on host
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: "${INFLUXDB_ADMIN_USER}"
+      DOCKER_INFLUXDB_INIT_PASSWORD: "${INFLUXDB_ADMIN_PASSWORD}"
+      DOCKER_INFLUXDB_INIT_ORG: "${INFLUXDB_ORG}"
+      DOCKER_INFLUXDB_INIT_BUCKET: "${INFLUXDB_DMARC_BUCKET}"
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: "${INFLUXDB_TOKEN}"
+      DOCKER_INFLUXDB_INIT_RETENTION: "365d"     # keep 1 year of DMARC data
+    volumes:
+      - influxdb_data:/var/lib/influxdb2
+      - influxdb_config:/etc/influxdb2
+      - ./influxdb/init:/docker-entrypoint-initdb.d:ro   # optional init scripts
+    healthcheck:
+      test: ["CMD", "influx", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - dmarc_net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ── Grafana ────────────────────────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:10.4.0
+    container_name: grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SERVER_ROOT_URL: "${GRAFANA_ROOT_URL:-http://localhost:3000}"
+      GF_SERVER_DOMAIN: "${GRAFANA_DOMAIN:-localhost}"
+      GF_SECURITY_ADMIN_USER: "${GRAFANA_ADMIN_USER}"
+      GF_SECURITY_ADMIN_PASSWORD: "${GRAFANA_ADMIN_PASSWORD}"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_INSTALL_PLUGINS: "grafana-worldmap-panel,grafana-piechart-panel"
+      # InfluxDB datasource — Grafana reads from same InfluxDB as parsedmarc
+      GF_DATASOURCES_DEFAULT_ORG: "${INFLUXDB_ORG}"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      influxdb:
+        condition: service_healthy
+    networks:
+      - dmarc_net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ── Caddy (reverse proxy + auto-TLS) ───────────────────────────────────────
+  caddy:
+    image: caddy:2-alpine
+    container_name: caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - grafana
+      - influxdb
+    networks:
+      - dmarc_net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  influxdb_data:
+  influxdb_config:
+  grafana_data:
+  caddy_data:
+  caddy_config:
+
+networks:
+  dmarc_net:
+    driver: bridge

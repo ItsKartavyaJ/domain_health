@@ -1,0 +1,38 @@
+# Secrets
+.env
+*.env.local
+credentials/
+*.json.key
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# Node
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Logs
+*.log
+logs/
+
+# Docker / InfluxDB / Grafana data
+parsedmarc-stack/influxdb/data/
+parsedmarc-stack/grafana/data/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.suo
+*.sw?
