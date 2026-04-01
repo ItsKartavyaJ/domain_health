@@ -22,72 +22,79 @@ export default function App() {
     setUser(null);
   }
 
-  return (
-    <div style={{ minHeight: '100vh', background: 'var(--bg)', fontFamily: 'system-ui, sans-serif' }}>
-      <style>{`
-        :root {
-          --bg: #f5f5f4;
-          --card-bg: #ffffff;
-          --surface: #f1efe8;
-          --border: rgba(0,0,0,0.12);
-          --muted: #888780;
-        }
-        @media (prefers-color-scheme: dark) {
-          :root {
-            --bg: #111213;
-            --card-bg: #1a1b1e;
-            --surface: #222327;
-            --border: rgba(255,255,255,0.1);
-            --muted: #888780;
-          }
-        }
-        * { box-sizing: border-box; margin: 0; padding: 0; color: inherit; }
-        body { color: #1a1a1a; }
-        @media (prefers-color-scheme: dark) { body { color: #d8d9da; } }
-        tr:hover td { background: var(--surface) !important; }
-      `}</style>
-
-      {checkingAuth ? (
-        <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center' }}>Checking session...</div>
-      ) : !user ? (
-        <Login onLogin={setUser} />
-      ) : (
-      <>
-      <div style={{ background: 'var(--card-bg)', borderBottom: '0.5px solid var(--border)', padding: '14px 24px', display: 'flex', alignItems: 'center', gap: 16 }}>
-        <div style={{ fontSize: 15, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 8 }}>
-          <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#378ADD' }}/>
-          DMARC Monitor
+  if (checkingAuth) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', background: 'var(--bg)' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+          <div style={{ width: 32, height: 32, borderRadius: '50%', border: '2.5px solid var(--border)', borderTopColor: 'var(--accent)', animation: 'spin 0.8s linear infinite' }} />
+          <div style={{ fontSize: 13, color: 'var(--muted)' }}>Checking session…</div>
         </div>
-        <div style={{ display: 'flex', gap: 2, marginLeft: 24 }}>
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
+    );
+  }
+
+  if (!user) return <Login onLogin={setUser} />;
+
+  const initials = String(user.email || 'U').slice(0, 2).toUpperCase();
+
+  return (
+    <div style={{ minHeight: '100vh', background: 'var(--bg)' }}>
+      {/* Top nav */}
+      <header style={{
+        position: 'sticky', top: 0, zIndex: 100,
+        background: 'var(--card-bg)',
+        borderBottom: '1px solid var(--border)',
+        padding: '0 24px',
+        display: 'flex', alignItems: 'center', gap: 8, height: 52,
+      }}>
+        {/* Logo */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginRight: 16 }}>
+          <div style={{ width: 28, height: 28, borderRadius: 8, background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <path d="M2 10 L7 2 L12 10" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+              <path d="M4.5 7 L9.5 7" stroke="white" strokeWidth="1.8" strokeLinecap="round"/>
+            </svg>
+          </div>
+          <span style={{ fontSize: 14, fontWeight: 600, letterSpacing: '-0.01em' }}>DMARC Monitor</span>
+        </div>
+
+        {/* Nav */}
+        <nav style={{ display: 'flex', gap: 2 }}>
           {navItems.map((item, i) => (
             <div key={item} style={{
-              fontSize: 13, padding: '5px 12px', borderRadius: 8, cursor: 'pointer',
+              fontSize: 13, padding: '5px 11px', borderRadius: 6, cursor: 'pointer',
               background: i === 0 ? 'var(--surface)' : 'transparent',
               fontWeight: i === 0 ? 500 : 400,
-              color: i === 0 ? 'inherit' : 'var(--muted)',
+              color: i === 0 ? 'var(--text)' : 'var(--muted)',
+              transition: 'background 0.15s',
             }}>{item}</div>
           ))}
-        </div>
+        </nav>
+
+        {/* Right side */}
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ fontSize: 12, color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#22C55E' }} />
+            {user.email}
+          </div>
           {user.photoURL ? (
-            <img src={user.photoURL} alt="" style={{ width: 28, height: 28, borderRadius: '50%' }} />
+            <img src={user.photoURL} alt="" style={{ width: 28, height: 28, borderRadius: '50%', border: '1.5px solid var(--border)' }} />
           ) : (
-            <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#E6F1FB', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 500, color: '#0C447C' }}>
-              {String(user.email || 'U').slice(0, 2).toUpperCase()}
+            <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--info-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 600, color: 'var(--info-text)' }}>
+              {initials}
             </div>
           )}
           <button
             onClick={handleLogout}
-            style={{ fontSize: 12, padding: '6px 10px', borderRadius: 8, border: '0.5px solid var(--border)', background: 'var(--card-bg)', cursor: 'pointer' }}
+            style={{ fontSize: 12, padding: '5px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'var(--muted)', cursor: 'pointer', transition: 'all 0.15s' }}
           >
-            Logout
+            Sign out
           </button>
         </div>
-      </div>
+      </header>
 
       <Overview />
-      </>
-      )}
     </div>
   );
 }

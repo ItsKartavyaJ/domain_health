@@ -1,45 +1,52 @@
 export default function DomainCard({ domain, score, rate, spf, dkim, total, status, lastReport }) {
-  const colors = {
-    ok:     { stroke: '#639922', bg: '#EAF3DE', text: '#3B6D11' },
-    warn:   { stroke: '#EF9F27', bg: '#FAEEDA', text: '#854F0B' },
-    danger: { stroke: '#E24B4A', bg: '#FCEBEB', text: '#A32D2D' },
-  };
-  const c = colors[status] || colors.ok;
+  const accent = status === 'ok' ? '#22C55E' : status === 'warn' ? '#F59E0B' : '#EF4444';
+  const accentBg = status === 'ok' ? 'var(--ok-bg)' : status === 'warn' ? 'var(--warn-bg)' : 'var(--err-bg)';
+  const accentText = status === 'ok' ? 'var(--ok-text)' : status === 'warn' ? 'var(--warn-text)' : 'var(--err-text)';
   const dash = Math.round((score / 100) * 113);
-  const borderColor = c.stroke;
+
+  const spfColor = spf === 'Pass' ? 'var(--ok-text)' : spf === 'Partial' ? 'var(--warn-text)' : 'var(--err-text)';
+  const dkimColor = dkim === 'Pass' ? 'var(--ok-text)' : 'var(--err-text)';
 
   return (
     <div style={{
-      background: 'var(--card-bg)', border: '0.5px solid var(--border)',
-      borderLeft: `3px solid ${borderColor}`, borderRadius: '0 12px 12px 0', padding: 16,
+      background: 'var(--card-bg)',
+      border: '1px solid var(--border)',
+      borderTop: `3px solid ${accent}`,
+      borderRadius: 12,
+      padding: 18,
+      boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+      transition: 'box-shadow 0.15s',
     }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
-        <div>
-          <div style={{ fontSize: 14, fontWeight: 500 }}>{domain}</div>
-          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>Report {lastReport}</div>
+      {/* Header row */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{domain}</div>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>Report {lastReport}</div>
         </div>
-        <div style={{ width: 44, height: 44, position: 'relative', flexShrink: 0 }}>
-          <svg viewBox="0 0 44 44" width="44" height="44">
-            <circle cx="22" cy="22" r="18" fill="none" stroke={c.bg} strokeWidth="4"/>
-            <circle cx="22" cy="22" r="18" fill="none" stroke={c.stroke} strokeWidth="4"
-              strokeDasharray={`${dash} 113`} strokeDashoffset="28" strokeLinecap="round"/>
+        {/* Score ring */}
+        <div style={{ position: 'relative', width: 46, height: 46, flexShrink: 0, marginLeft: 8 }}>
+          <svg viewBox="0 0 46 46" width="46" height="46">
+            <circle cx="23" cy="23" r="19" fill="none" stroke={accentBg} strokeWidth="4.5"/>
+            <circle cx="23" cy="23" r="19" fill="none" stroke={accent} strokeWidth="4.5"
+              strokeDasharray={`${dash} 119`} strokeDashoffset="30" strokeLinecap="round"/>
           </svg>
-          <div style={{
-            position: 'absolute', top: '50%', left: '50%',
-            transform: 'translate(-50%,-50%)', fontSize: 11, fontWeight: 500,
-          }}>{score}</div>
+          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: accentText }}>
+            {score}
+          </div>
         </div>
       </div>
+
+      {/* Stats grid */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
         {[
-          { label: 'DMARC pass', val: `${rate}%`, color: c.text },
-          { label: 'Emails today', val: total.toLocaleString() },
-          { label: 'SPF', val: spf, color: spf === 'Pass' ? '#3B6D11' : spf === 'Partial' ? '#854F0B' : '#A32D2D' },
-          { label: 'DKIM', val: dkim, color: dkim === 'Pass' ? '#3B6D11' : '#A32D2D' },
+          { label: 'DMARC pass', val: `${rate}%`, color: accentText },
+          { label: 'Emails', val: total.toLocaleString(), color: 'var(--text)' },
+          { label: 'SPF', val: spf, color: spfColor },
+          { label: 'DKIM', val: dkim, color: dkimColor },
         ].map(({ label, val, color }) => (
-          <div key={label} style={{ background: 'var(--surface)', borderRadius: 8, padding: 8 }}>
-            <div style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 2 }}>{label}</div>
-            <div style={{ fontSize: 15, fontWeight: 500, color: color || 'inherit' }}>{val}</div>
+          <div key={label} style={{ background: 'var(--surface)', borderRadius: 8, padding: '8px 10px' }}>
+            <div style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 3 }}>{label}</div>
+            <div style={{ fontSize: 14, fontWeight: 600, color }}>{val}</div>
           </div>
         ))}
       </div>
