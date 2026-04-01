@@ -175,7 +175,7 @@ fi
 ############################
 # Load configuration from global .env
 ############################
-VM_REPO_ROOT="/opt/domain_health"
+VM_REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if [[ ! -f "${VM_REPO_ROOT}/.env" ]]; then
   echo "Global .env file not found at ${VM_REPO_ROOT}/.env"
@@ -320,7 +320,30 @@ EOF
 
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
-cp deliverability_monitor.service /etc/systemd/system/deliverability_monitor.service
+
+cat <<EOF > /etc/systemd/system/deliverability_monitor.service
+[Unit]
+Description=Pintel Deliverability Monitor
+After=network-online.target influxdb.service
+Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+WorkingDirectory=${VM_REPO_ROOT}/deliverability_monitor
+Environment="PYTHONPATH=${VM_REPO_ROOT}/deliverability_monitor"
+ExecStart=${VM_REPO_ROOT}/deliverability_monitor/.venv/bin/python ${VM_REPO_ROOT}/deliverability_monitor/scheduler.py
+Restart=on-failure
+RestartSec=30
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=deliverability-monitor
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
 systemctl daemon-reload
 systemctl enable --now deliverability_monitor
 
