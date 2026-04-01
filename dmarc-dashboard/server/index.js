@@ -216,7 +216,7 @@ app.get('/api/metrics/alerts', authMiddleware, async (_req, res) => {
 });
 
 app.use(express.static(distPath));
-app.get('*', (req, res) => {
+app.get('/{*path}', (req, res) => {
   if (req.path.startsWith('/api/')) {
     return res.status(404).json({ error: 'Not found' });
   }
