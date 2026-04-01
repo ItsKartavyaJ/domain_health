@@ -1,49 +1,50 @@
-import cookieParser from 'cookie-parser';
 import dotenv from 'dotenv';
 import express from 'express';
-import jwt from 'jsonwebtoken';
+import { initializeApp, cert, getApps } from 'firebase-admin/app';
+import { getAuth } from 'firebase-admin/auth';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
 dotenv.config();
 
-const app = express();
 const PORT = Number(process.env.API_PORT || 8787);
-const JWT_SECRET = process.env.API_JWT_SECRET;
-const AUTH_USER = process.env.API_AUTH_USER || 'authuser';
-const AUTH_PASSWORD = process.env.API_AUTH_PASSWORD || '';
 const INFLUX_URL = process.env.INFLUX_URL || '';
 const INFLUX_ORG = process.env.INFLUX_ORG || 'pintel';
 const INFLUX_BUCKET = process.env.INFLUX_BUCKET || 'dmarc';
 const INFLUX_TOKEN = process.env.INFLUX_TOKEN || '';
+const FIREBASE_PROJECT_ID = process.env.FIREBASE_PROJECT_ID || '';
+const ALLOWED_DOMAIN = 'pintel.ai';
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const distPath = path.resolve(__dirname, '../dist');
 
-if (!JWT_SECRET) {
-  throw new Error('Missing API_JWT_SECRET in environment');
-}
-if (!AUTH_PASSWORD) {
-  throw new Error('Missing API_AUTH_PASSWORD in environment');
-}
 if (!INFLUX_URL || !INFLUX_TOKEN) {
   throw new Error('Missing INFLUX_URL or INFLUX_TOKEN in environment');
 }
-
-app.use(express.json());
-app.use(cookieParser());
-
-function createToken(username) {
-  return jwt.sign({ sub: username }, JWT_SECRET, { expiresIn: '12h' });
+if (!FIREBASE_PROJECT_ID) {
+  throw new Error('Missing FIREBASE_PROJECT_ID in environment');
 }
 
-function authMiddleware(req, res, next) {
-  const token = req.cookies?.dmarc_auth;
+// Initialise firebase-admin (credential-less — uses project ID for token verification only)
+if (!getApps().length) {
+  initializeApp({ projectId: FIREBASE_PROJECT_ID });
+}
+
+const app = express();
+app.use(express.json({ limit: '2kb' }));
+
+async function authMiddleware(req, res, next) {
+  const authHeader = req.headers.authorization || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
   if (!token) return res.status(401).json({ error: 'Unauthorized' });
 
   try {
-    const payload = jwt.verify(token, JWT_SECRET);
-    req.user = payload.sub;
+    const decoded = await getAuth().verifyIdToken(token);
+    if (!decoded.email || !decoded.email.endsWith(`@${ALLOWED_DOMAIN}`)) {
+      return res.status(403).json({ error: 'Access restricted to @pintel.ai accounts' });
+    }
+    req.user = decoded.email;
     next();
   } catch {
     return res.status(401).json({ error: 'Unauthorized' });
@@ -171,28 +172,6 @@ function getAlerts(domains) {
     .slice(0, 8);
 }
 
-app.post('/api/auth/login', (req, res) => {
-  const { username, password } = req.body || {};
-  if (username !== AUTH_USER || password !== AUTH_PASSWORD) {
-    return res.status(401).json({ error: 'Invalid credentials' });
-  }
-
-  const token = createToken(username);
-  res.cookie('dmarc_auth', token, {
-    httpOnly: true,
-    sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
-    maxAge: 12 * 60 * 60 * 1000,
-  });
-
-  return res.json({ ok: true, user: username });
-});
-
-app.post('/api/auth/logout', (_req, res) => {
-  res.clearCookie('dmarc_auth');
-  return res.json({ ok: true });
-});
-
 app.get('/api/auth/me', authMiddleware, (req, res) => {
   return res.json({ ok: true, user: req.user });
 });
@@ -201,8 +180,8 @@ app.get('/api/metrics/domain-stats', authMiddleware, async (_req, res) => {
   try {
     const domains = await getDomainStats();
     return res.json({ ok: true, domains });
-  } catch (error) {
-    return res.status(500).json({ error: error.message || 'Failed to load domain stats' });
+  } catch {
+    return res.status(500).json({ error: 'Failed to load domain stats' });
   }
 });
 
@@ -210,8 +189,8 @@ app.get('/api/metrics/alerts', authMiddleware, async (_req, res) => {
   try {
     const domains = await getDomainStats();
     return res.json({ ok: true, alerts: getAlerts(domains) });
-  } catch (error) {
-    return res.status(500).json({ error: error.message || 'Failed to load alerts' });
+  } catch {
+    return res.status(500).json({ error: 'Failed to load alerts' });
   }
 });
 

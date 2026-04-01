@@ -1,13 +1,20 @@
+import { getIdToken } from './auth';
+
+async function authFetch(url) {
+  const token = await getIdToken();
+  const res = await fetch(url, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) throw new Error('Failed to load data — check API connection.');
+  return res.json();
+}
+
 export async function getDomainStats() {
-  const res = await fetch('/api/metrics/domain-stats', { credentials: 'include' });
-  if (!res.ok) throw new Error('Failed to load domain stats');
-  const json = await res.json();
+  const json = await authFetch('/api/metrics/domain-stats');
   return json.domains || [];
 }
 
 export async function getAlerts() {
-  const res = await fetch('/api/metrics/alerts', { credentials: 'include' });
-  if (!res.ok) throw new Error('Failed to load alerts');
-  const json = await res.json();
+  const json = await authFetch('/api/metrics/alerts');
   return json.alerts || [];
 }

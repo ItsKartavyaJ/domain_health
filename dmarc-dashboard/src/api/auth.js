@@ -1,29 +1,25 @@
-export async function login(username, password) {
-  const res = await fetch('/api/auth/login', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-    body: JSON.stringify({ username, password }),
-  });
+import { signInWithPopup, signOut as firebaseSignOut } from 'firebase/auth';
+import { auth, googleProvider } from '../firebase';
 
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.error || 'Login failed');
+export async function signInWithGoogle() {
+  const result = await signInWithPopup(auth, googleProvider);
+  if (!result.user.email.endsWith('@pintel.ai')) {
+    await firebaseSignOut(auth);
+    throw new Error('Only @pintel.ai accounts are allowed.');
   }
-
-  return res.json();
+  return result.user;
 }
 
 export async function logout() {
-  await fetch('/api/auth/logout', {
-    method: 'POST',
-    credentials: 'include',
-  });
+  await firebaseSignOut(auth);
 }
 
-export async function getCurrentUser() {
-  const res = await fetch('/api/auth/me', { credentials: 'include' });
-  if (!res.ok) return null;
-  const body = await res.json();
-  return body.user || null;
+export function onAuthChange(callback) {
+  return auth.onAuthStateChanged(callback);
+}
+
+export async function getIdToken() {
+  const user = auth.currentUser;
+  if (!user) return null;
+  return user.getIdToken();
 }

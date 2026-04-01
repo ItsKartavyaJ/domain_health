@@ -210,8 +210,8 @@ if [[ -z "${DMARC_MAILBOX_APP_PASSWORD:-}" ]] || [[ "${DMARC_MAILBOX_APP_PASSWOR
   exit 1
 fi
 
-if [[ -z "${API_AUTH_PASSWORD:-}" ]] || [[ "${API_AUTH_PASSWORD}" == change_me* ]]; then
-  echo "API_AUTH_PASSWORD is not configured in .env (still has placeholder value)"
+if [[ -z "${FIREBASE_PROJECT_ID:-}" ]] || [[ "${FIREBASE_PROJECT_ID}" == change_me* ]]; then
+  echo "FIREBASE_PROJECT_ID is not configured in .env (still has placeholder value)"
   exit 1
 fi
 
@@ -352,14 +352,17 @@ cd "${VM_REPO_ROOT}/dmarc-dashboard"
 
 cat <<EOF > .env
 API_PORT=${API_PORT}
-API_AUTH_USER=${API_AUTH_USER}
-API_AUTH_PASSWORD=${API_AUTH_PASSWORD}
-API_JWT_SECRET=${API_JWT_SECRET}
 
 INFLUX_URL=http://localhost:8086
 INFLUX_ORG=${INFLUXDB_ORG}
 INFLUX_BUCKET=${INFLUXDB_DMARC_BUCKET}
 INFLUX_TOKEN=${INFLUXDB_TOKEN}
+
+FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID}
+VITE_FIREBASE_API_KEY=${VITE_FIREBASE_API_KEY}
+VITE_FIREBASE_AUTH_DOMAIN=${VITE_FIREBASE_AUTH_DOMAIN}
+VITE_FIREBASE_PROJECT_ID=${VITE_FIREBASE_PROJECT_ID}
+VITE_FIREBASE_APP_ID=${VITE_FIREBASE_APP_ID}
 EOF
 
 npm ci

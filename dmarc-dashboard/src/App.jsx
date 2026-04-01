@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { getCurrentUser, login, logout } from './api/auth';
+import { onAuthChange, logout } from './api/auth';
 import Overview from './pages/Overview';
 import Login from './pages/Login';
 
@@ -10,15 +10,12 @@ export default function App() {
   const [checkingAuth, setCheckingAuth] = useState(true);
 
   useEffect(() => {
-    getCurrentUser()
-      .then((current) => setUser(current))
-      .finally(() => setCheckingAuth(false));
+    const unsubscribe = onAuthChange((firebaseUser) => {
+      setUser(firebaseUser);
+      setCheckingAuth(false);
+    });
+    return unsubscribe;
   }, []);
-
-  async function handleLogin(username, password) {
-    const result = await login(username, password);
-    setUser(result.user);
-  }
 
   async function handleLogout() {
     await logout();
@@ -53,7 +50,7 @@ export default function App() {
       {checkingAuth ? (
         <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center' }}>Checking session...</div>
       ) : !user ? (
-        <Login onLogin={handleLogin} />
+        <Login onLogin={setUser} />
       ) : (
       <>
       <div style={{ background: 'var(--card-bg)', borderBottom: '0.5px solid var(--border)', padding: '14px 24px', display: 'flex', alignItems: 'center', gap: 16 }}>
@@ -72,9 +69,13 @@ export default function App() {
           ))}
         </div>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#E6F1FB', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 500, color: '#0C447C' }}>
-            {String(user || 'U').slice(0, 2).toUpperCase()}
-          </div>
+          {user.photoURL ? (
+            <img src={user.photoURL} alt="" style={{ width: 28, height: 28, borderRadius: '50%' }} />
+          ) : (
+            <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#E6F1FB', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 500, color: '#0C447C' }}>
+              {String(user.email || 'U').slice(0, 2).toUpperCase()}
+            </div>
+          )}
           <button
             onClick={handleLogout}
             style={{ fontSize: 12, padding: '6px 10px', borderRadius: 8, border: '0.5px solid var(--border)', background: 'var(--card-bg)', cursor: 'pointer' }}
