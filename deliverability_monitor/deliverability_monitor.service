@@ -5,10 +5,9 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=ubuntu
-WorkingDirectory=/opt/deliverability_monitor
-Environment="PYTHONPATH=/opt/deliverability_monitor"
-EnvironmentFile=/opt/deliverability_monitor/.env
+WorkingDirectory=/opt/domain_health/deliverability_monitor
+Environment="PYTHONPATH=/opt/domain_health/deliverability_monitor"
+EnvironmentFile=/opt/domain_health/.env
 ExecStart=/opt/domain_health/deliverability_monitor/.venv/bin/python /opt/domain_health/deliverability_monitor/scheduler.py
 Restart=on-failure
 RestartSec=30
