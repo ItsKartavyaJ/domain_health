@@ -7,7 +7,6 @@ Run standalone:  python -m modules.rbl_monitor
 Called by:       scheduler.py every RBL_CHECK_INTERVAL_HOURS
 """
 
-import asyncio
 import logging
 import time
 from typing import List, Tuple
@@ -38,7 +37,7 @@ def _build_checkers():
     return domain_checker, ip_checker
 
 
-async def check_domains(domains: List[str]) -> List[dict]:
+def check_domains(domains: List[str]) -> List[dict]:
     """Async check all domains against DNSBL. Returns list of result dicts."""
     domain_checker, _ = _build_checkers()
     results = []
@@ -79,7 +78,7 @@ async def check_domains(domains: List[str]) -> List[dict]:
     return results
 
 
-async def check_ips(ips: List[str]) -> List[dict]:
+def check_ips(ips: List[str]) -> List[dict]:
     """Async check all sending IPs against DNSBL."""
     _, ip_checker = _build_checkers()
     results = []
@@ -166,8 +165,8 @@ def run() -> dict:
     log.info("=== RBL Monitor run started ===")
     start = time.time()
 
-    domain_results = asyncio.run(check_domains(get_domains()))
-    ip_results = asyncio.run(check_ips(get_ips()))
+    domain_results = check_domains(get_domains())
+    ip_results = check_ips(get_ips())
 
     write_results(domain_results, ip_results)
 
