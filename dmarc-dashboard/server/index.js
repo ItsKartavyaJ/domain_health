@@ -96,7 +96,9 @@ async function queryFlux(flux) {
 }
 
 async function getDomainStats() {
-  const rows = await queryFlux(`
+  let rows;
+  try {
+    rows = await queryFlux(`
 from(bucket: "${INFLUX_BUCKET}")
   |> range(start: -48h)
   |> filter(fn: (r) => r._measurement == "dmarc_aggregate")
@@ -116,6 +118,13 @@ from(bucket: "${INFLUX_BUCKET}")
   |> keep(columns: ["header_from", "total", "passed", "spf_aligned_count", "dkim_aligned_count"])
   |> sort(columns: ["total"], desc: true)
 `);
+  } catch (err) {
+    // Bucket empty or no dmarc_aggregate data yet — return empty
+    if (err.message.includes('no results') || err.message.includes('not found') || err.message.includes('empty')) {
+      return [];
+    }
+    throw err;
+  }
 
   return rows
     .filter((r) => r.header_from)
@@ -180,7 +189,8 @@ app.get('/api/metrics/domain-stats', authMiddleware, async (_req, res) => {
   try {
     const domains = await getDomainStats();
     return res.json({ ok: true, domains });
-  } catch {
+  } catch (err) {
+    console.error('[domain-stats]', err.message);
     return res.status(500).json({ error: 'Failed to load domain stats' });
   }
 });
