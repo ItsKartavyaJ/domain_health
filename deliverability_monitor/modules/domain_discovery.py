@@ -95,11 +95,14 @@ def _fetch_active_domains() -> List[str]:
     if not data:
         return []
     rows = data if isinstance(data, list) else data.get("data", [])
-    return [
-        str(row.get("domain", ""))
-        for row in rows
-        if row.get("domain")
-    ]
+    result = []
+    for row in rows:
+        if isinstance(row, str):
+            if row:
+                result.append(row)
+        elif isinstance(row, dict) and row.get("domain"):
+            result.append(str(row["domain"]))
+    return result
 
 
 def _resolve_spf_ips(domain: str) -> Set[str]:
