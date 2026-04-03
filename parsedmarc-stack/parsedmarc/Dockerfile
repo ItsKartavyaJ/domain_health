@@ -18,9 +18,10 @@ RUN pip install --no-cache-dir \
 
 # Create non-root user
 RUN useradd -r -s /bin/false parsedmarc
-USER parsedmarc
 
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
+
+USER parsedmarc
 
 ENTRYPOINT ["/entrypoint.sh"]
