@@ -1,10 +1,11 @@
 #!/bin/sh
 # Generate parsedmarc.ini from environment variables, then run parsedmarc
+mkdir -p /tmp/parsedmarc-output
 cat > /tmp/parsedmarc.ini << EOF
 [general]
 save_aggregate = True
 save_forensic = True
-output = /dev/null
+output = /tmp/parsedmarc-output
 
 [imap]
 host = ${PARSEDMARC_IMAP_HOST}
