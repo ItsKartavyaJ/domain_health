@@ -111,3 +111,5 @@ All secrets live in a single `.env` at the project root. Key variables:
 - `deliverability_monitor` accesses InfluxDB inside Docker via the bridge network (`localhost:8086` from the host systemd service)
 - `warmup_stats` has a 0.3s inter-request delay across 164 mailboxes (~50s per run); tunable via env var
 - Postmaster Tools module is optional — silently skips if credentials file not found
+
+<!-- claude --resume 217c241f-f162-4490-aad3-656c35cccf26   -->

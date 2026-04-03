@@ -107,12 +107,12 @@ from(bucket: "${INFLUX_BUCKET}")
   |> group(columns: ["header_from"])
   |> reduce(
       identity: {header_from: "", total: 0.0, passed: 0.0, spf_aligned_count: 0.0, dkim_aligned_count: 0.0},
-      fn: (r, acc) => ({
+      fn: (r, accumulator) => ({
         header_from: r.header_from,
-        total: acc.total + float(v: if exists r.message_count then r.message_count else 0),
-        passed: acc.passed + (if exists r.passed_dmarc and bool(v: r.passed_dmarc) then float(v: if exists r.message_count then r.message_count else 0) else 0.0),
-        spf_aligned_count: acc.spf_aligned_count + (if exists r.spf_aligned and bool(v: r.spf_aligned) then float(v: if exists r.message_count then r.message_count else 0) else 0.0),
-        dkim_aligned_count: acc.dkim_aligned_count + (if exists r.dkim_aligned and bool(v: r.dkim_aligned) then float(v: if exists r.message_count then r.message_count else 0) else 0.0),
+        total: accumulator.total + float(v: if exists r.message_count then r.message_count else 0),
+        passed: accumulator.passed + (if exists r.passed_dmarc and bool(v: r.passed_dmarc) then float(v: if exists r.message_count then r.message_count else 0) else 0.0),
+        spf_aligned_count: accumulator.spf_aligned_count + (if exists r.spf_aligned and bool(v: r.spf_aligned) then float(v: if exists r.message_count then r.message_count else 0) else 0.0),
+        dkim_aligned_count: accumulator.dkim_aligned_count + (if exists r.dkim_aligned and bool(v: r.dkim_aligned) then float(v: if exists r.message_count then r.message_count else 0) else 0.0),
       })
     )
   |> keep(columns: ["header_from", "total", "passed", "spf_aligned_count", "dkim_aligned_count"])
