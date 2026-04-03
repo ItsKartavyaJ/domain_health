@@ -20,8 +20,7 @@ RUN pip install --no-cache-dir \
 RUN useradd -r -s /bin/false parsedmarc
 USER parsedmarc
 
-# parsedmarc reads config purely from env vars (PARSEDMARC_* prefix)
-# No config file needed — everything passed via docker-compose env_file + environment
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
-ENTRYPOINT ["parsedmarc"]
-CMD ["--debug"]
+ENTRYPOINT ["/entrypoint.sh"]
