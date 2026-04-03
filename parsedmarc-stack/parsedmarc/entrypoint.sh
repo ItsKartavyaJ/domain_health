@@ -12,6 +12,8 @@ port = ${PARSEDMARC_IMAP_PORT}
 ssl = True
 user = ${PARSEDMARC_IMAP_USER}
 password = ${PARSEDMARC_IMAP_PASSWORD}
+
+[mailbox]
 watch = True
 delete = False
 batch_size = ${PARSEDMARC_MAILBOX_BATCH_SIZE:-10}
