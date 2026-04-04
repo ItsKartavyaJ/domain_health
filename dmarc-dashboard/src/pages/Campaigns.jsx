@@ -136,7 +136,7 @@ export default function Campaigns() {
               {daily.length > 0 ? (
                 <ResponsiveContainer width="100%" height={290}>
                   <AreaChart data={daily.map((d) => ({
-                    date: (d.date || '').slice(5, 10),
+                    date: d.date || '',
                     sent: d.sent || 0,
                     opened: d.opened || 0,
                     replied: d.replied || 0,

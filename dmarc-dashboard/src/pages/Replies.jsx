@@ -141,12 +141,11 @@ export default function Replies() {
             <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 16 }}>Daily Positive Reply Trend</div>
             {dailyReplies.length > 0 ? (
               <ResponsiveContainer width="100%" height={240}>
-                <AreaChart data={dailyReplies.map((d) => ({ date: (d.date || '').slice(0, 10), total: d.total_replies || 0, positive: d.positive_replies || 0 }))}>
+                <AreaChart data={dailyReplies.map((d) => ({ date: d.date || '', positive: d.positive_replies || 0 }))}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                   <XAxis dataKey="date" tick={{ fontSize: 11, fill: 'var(--muted)' }} />
                   <YAxis tick={{ fontSize: 11, fill: 'var(--muted)' }} />
                   <Tooltip contentStyle={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }} />
-                  <Area type="monotone" dataKey="total" stroke="#3B82F6" fill="var(--info-bg)" name="Total Replies" />
                   <Area type="monotone" dataKey="positive" stroke="#22C55E" fill="var(--ok-bg)" name="Positive Replies" />
                 </AreaChart>
               </ResponsiveContainer>
