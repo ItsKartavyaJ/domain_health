@@ -100,7 +100,7 @@ async function getDomainStats() {
   try {
     rows = await queryFlux(`
 from(bucket: "${INFLUX_BUCKET}")
-  |> range(start: -48h)
+  |> range(start: -30d)
   |> filter(fn: (r) => r._measurement == "dmarc_aggregate")
   |> filter(fn: (r) => r._field == "message_count" or r._field == "passed_dmarc" or r._field == "spf_aligned" or r._field == "dkim_aligned")
   |> pivot(rowKey: ["_time", "header_from"], columnKey: ["_field"], valueColumn: "_value")
