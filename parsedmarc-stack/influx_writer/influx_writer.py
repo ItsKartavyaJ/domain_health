@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
 """
-influx_writer.py — watches parsedmarc aggregate output and writes to InfluxDB.
+influx_writer.py — watches parsedmarc's aggregate.json and writes to InfluxDB.
 
-parsedmarc v8 with save_aggregate=True writes one JSON per report to
-{output}/aggregate/. We convert each record to InfluxDB line protocol
-and POST to InfluxDB v2. Processed files are moved to {processed_dir}.
+parsedmarc v8 appends aggregate report JSON objects to {output}/aggregate.json.
+We tail this file, parse each new report, and POST line protocol to InfluxDB v2.
 """
 import json
 import os
-import shutil
 import time
 import urllib.error
 import urllib.request
@@ -19,8 +17,7 @@ INFLUX_URL = os.environ.get("INFLUX_URL", "http://influxdb:8086")
 INFLUX_ORG = os.environ.get("INFLUX_ORG", "pintel")
 INFLUX_TOKEN = os.environ.get("INFLUX_TOKEN", "")
 INFLUX_BUCKET = os.environ.get("INFLUX_BUCKET", "dmarc")
-WATCH_DIR = Path(os.environ.get("WATCH_DIR", "/data/aggregate"))
-PROCESSED_DIR = Path(os.environ.get("PROCESSED_DIR", "/data/processed"))
+AGGREGATE_FILE = Path(os.environ.get("AGGREGATE_FILE", "/data/aggregate.json"))
 POLL_INTERVAL = int(os.environ.get("POLL_INTERVAL", "30"))
 
 
@@ -29,12 +26,13 @@ def escape_tag(value: str) -> str:
 
 
 def parse_timestamp_ns(dt_str: str) -> int:
-    """'YYYY-MM-DD HH:MM:SS' → Unix nanoseconds (UTC)."""
-    try:
-        dt = datetime.strptime(dt_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
-        return int(dt.timestamp() * 1_000_000_000)
-    except (ValueError, TypeError):
-        return int(datetime.now(timezone.utc).timestamp() * 1_000_000_000)
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d"):
+        try:
+            dt = datetime.strptime(dt_str, fmt).replace(tzinfo=timezone.utc)
+            return int(dt.timestamp() * 1_000_000_000)
+        except (ValueError, TypeError):
+            continue
+    return int(datetime.now(timezone.utc).timestamp() * 1_000_000_000)
 
 
 def report_to_lines(report: dict) -> list:
@@ -85,54 +83,88 @@ def write_to_influx(lines: list) -> None:
     urllib.request.urlopen(req, timeout=30)
 
 
-def process_file(path: Path) -> bool:
-    try:
-        with open(path) as f:
-            data = json.load(f)
+def parse_aggregate_json(text: str) -> list:
+    """Parse parsedmarc's aggregate.json which may contain one or more JSON objects.
+    parsedmarc appends JSON arrays of reports to the file."""
+    reports = []
+    # Try as a single JSON array first
+    text = text.strip()
+    if not text:
+        return reports
 
-        # handle both individual report objects and batch wrappers
-        if "aggregate_reports" in data:
-            reports = data["aggregate_reports"]
-        elif "records" in data:
-            reports = [data]
-        else:
-            print(f"[WARN] unrecognised format in {path.name}, skipping", flush=True)
-            return True
-
-        all_lines = []
-        for report in reports:
-            all_lines.extend(report_to_lines(report))
-
-        if not all_lines:
-            print(f"[INFO] no records in {path.name}", flush=True)
-            return True
-
-        write_to_influx(all_lines)
-        print(f"[OK] wrote {len(all_lines)} points from {path.name}", flush=True)
-        return True
-
-    except urllib.error.HTTPError as exc:
-        print(f"[ERROR] InfluxDB {exc.code} for {path.name}: {exc.read()}", flush=True)
-        return False
-    except Exception as exc:
-        print(f"[ERROR] {path.name}: {exc}", flush=True)
-        return False
+    # parsedmarc appends complete JSON arrays, one per batch
+    # Try to parse by finding top-level [ ] blocks
+    decoder = json.JSONDecoder()
+    pos = 0
+    while pos < len(text):
+        # Skip whitespace
+        while pos < len(text) and text[pos] in " \t\n\r":
+            pos += 1
+        if pos >= len(text):
+            break
+        try:
+            obj, end = decoder.raw_decode(text, pos)
+            if isinstance(obj, list):
+                reports.extend(obj)
+            elif isinstance(obj, dict):
+                reports.append(obj)
+            pos = end
+        except json.JSONDecodeError:
+            # Skip past the problem character and try again
+            pos += 1
+    return reports
 
 
 def main() -> None:
-    WATCH_DIR.mkdir(parents=True, exist_ok=True)
-    PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
+    print(f"[INFO] watching {AGGREGATE_FILE} every {POLL_INTERVAL}s", flush=True)
+    print(f"[INFO] influx -> {INFLUX_URL} org={INFLUX_ORG} bucket={INFLUX_BUCKET}", flush=True)
 
-    print(f"[INFO] watching {WATCH_DIR} every {POLL_INTERVAL}s", flush=True)
-    print(f"[INFO] influx → {INFLUX_URL} org={INFLUX_ORG} bucket={INFLUX_BUCKET}", flush=True)
+    last_size = 0
+    processed_ids = set()
+
+    # Load existing processed IDs if file already exists
+    if AGGREGATE_FILE.exists():
+        try:
+            text = AGGREGATE_FILE.read_text(encoding="utf-8")
+            for report in parse_aggregate_json(text):
+                rid = report.get("report_metadata", {}).get("report_id", "")
+                if rid:
+                    processed_ids.add(rid)
+            last_size = AGGREGATE_FILE.stat().st_size
+            print(f"[INFO] found {len(processed_ids)} existing reports, starting from {last_size} bytes", flush=True)
+        except Exception as exc:
+            print(f"[WARN] error reading existing file: {exc}", flush=True)
 
     while True:
-        for json_file in sorted(WATCH_DIR.glob("*.json")):
-            if process_file(json_file):
-                dest = PROCESSED_DIR / json_file.name
-                if dest.exists():
-                    dest = PROCESSED_DIR / f"{json_file.stem}_{int(time.time())}.json"
-                shutil.move(str(json_file), str(dest))
+        try:
+            if AGGREGATE_FILE.exists():
+                current_size = AGGREGATE_FILE.stat().st_size
+                if current_size > last_size:
+                    text = AGGREGATE_FILE.read_text(encoding="utf-8")
+                    reports = parse_aggregate_json(text)
+
+                    new_lines = []
+                    new_count = 0
+                    for report in reports:
+                        rid = report.get("report_metadata", {}).get("report_id", "")
+                        if rid and rid in processed_ids:
+                            continue
+                        lines = report_to_lines(report)
+                        new_lines.extend(lines)
+                        if rid:
+                            processed_ids.add(rid)
+                        new_count += 1
+
+                    if new_lines:
+                        write_to_influx(new_lines)
+                        print(f"[OK] wrote {len(new_lines)} points from {new_count} new reports", flush=True)
+
+                    last_size = current_size
+        except urllib.error.HTTPError as exc:
+            print(f"[ERROR] InfluxDB {exc.code}: {exc.read()}", flush=True)
+        except Exception as exc:
+            print(f"[ERROR] {exc}", flush=True)
+
         time.sleep(POLL_INTERVAL)
 
 

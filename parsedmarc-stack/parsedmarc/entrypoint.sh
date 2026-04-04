@@ -1,6 +1,5 @@
 #!/bin/sh
 # Generate parsedmarc.ini from environment variables, then run parsedmarc
-mkdir -p /data/aggregate /data/forensic /data/processed
 cat > /tmp/parsedmarc.ini << EOF
 [general]
 save_aggregate = True

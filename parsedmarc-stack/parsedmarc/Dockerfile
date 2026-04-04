@@ -16,12 +16,7 @@ RUN pip install --no-cache-dir \
     google-auth-oauthlib \
     google-api-python-client
 
-# Create non-root user
-RUN useradd -r -s /bin/false parsedmarc
-
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
-
-USER parsedmarc
 
 ENTRYPOINT ["/entrypoint.sh"]
