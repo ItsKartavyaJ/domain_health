@@ -1,9 +1,10 @@
 import dotenv from 'dotenv';
 import express from 'express';
-import { initializeApp, cert, getApps } from 'firebase-admin/app';
+import { initializeApp, getApps } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import smartleadRouter from './smartlead.js';
 
 dotenv.config();
 
@@ -203,6 +204,8 @@ app.get('/api/metrics/alerts', authMiddleware, async (_req, res) => {
     return res.status(500).json({ error: 'Failed to load alerts' });
   }
 });
+
+app.use('/api/smartlead', authMiddleware, smartleadRouter);
 
 app.use(express.static(distPath));
 app.get('/{*path}', (req, res) => {

@@ -1,13 +1,32 @@
 import { useEffect, useState } from 'react';
 import { onAuthChange, logout } from './api/auth';
 import Overview from './pages/Overview';
+import Replies from './pages/Replies';
+import Mailboxes from './pages/Mailboxes';
+import Campaigns from './pages/Campaigns';
+import Sequences from './pages/Sequences';
 import Login from './pages/Login';
 
-const navItems = ['Overview', 'Domains', 'Reports', 'Alerts', 'Settings'];
+const tabs = [
+  { key: 'overview', label: 'Overview' },
+  { key: 'replies', label: 'Replies' },
+  { key: 'mailboxes', label: 'Mailboxes' },
+  { key: 'campaigns', label: 'Campaigns' },
+  { key: 'sequences', label: 'Sequences' },
+];
+
+const tabComponents = {
+  overview: Overview,
+  replies: Replies,
+  mailboxes: Mailboxes,
+  campaigns: Campaigns,
+  sequences: Sequences,
+};
 
 export default function App() {
   const [user, setUser] = useState(null);
   const [checkingAuth, setCheckingAuth] = useState(true);
+  const [activeTab, setActiveTab] = useState('overview');
 
   useEffect(() => {
     const unsubscribe = onAuthChange((firebaseUser) => {
@@ -27,7 +46,7 @@ export default function App() {
       <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', background: 'var(--bg)' }}>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
           <div style={{ width: 32, height: 32, borderRadius: '50%', border: '2.5px solid var(--border)', borderTopColor: 'var(--accent)', animation: 'spin 0.8s linear infinite' }} />
-          <div style={{ fontSize: 13, color: 'var(--muted)' }}>Checking session…</div>
+          <div style={{ fontSize: 13, color: 'var(--muted)' }}>Checking session...</div>
         </div>
         <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       </div>
@@ -37,6 +56,7 @@ export default function App() {
   if (!user) return <Login onLogin={setUser} />;
 
   const initials = String(user.email || 'U').slice(0, 2).toUpperCase();
+  const ActivePage = tabComponents[activeTab] || Overview;
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg)' }}>
@@ -59,16 +79,20 @@ export default function App() {
           <span style={{ fontSize: 14, fontWeight: 600, letterSpacing: '-0.01em' }}>DMARC Monitor</span>
         </div>
 
-        {/* Nav */}
+        {/* Nav tabs */}
         <nav style={{ display: 'flex', gap: 2 }}>
-          {navItems.map((item, i) => (
-            <div key={item} style={{
-              fontSize: 13, padding: '5px 11px', borderRadius: 6, cursor: 'pointer',
-              background: i === 0 ? 'var(--surface)' : 'transparent',
-              fontWeight: i === 0 ? 500 : 400,
-              color: i === 0 ? 'var(--text)' : 'var(--muted)',
-              transition: 'background 0.15s',
-            }}>{item}</div>
+          {tabs.map((tab) => (
+            <div
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              style={{
+                fontSize: 13, padding: '5px 11px', borderRadius: 6, cursor: 'pointer',
+                background: activeTab === tab.key ? 'var(--surface)' : 'transparent',
+                fontWeight: activeTab === tab.key ? 500 : 400,
+                color: activeTab === tab.key ? 'var(--text)' : 'var(--muted)',
+                transition: 'background 0.15s',
+              }}
+            >{tab.label}</div>
           ))}
         </nav>
 
@@ -94,7 +118,7 @@ export default function App() {
         </div>
       </header>
 
-      <Overview />
+      <ActivePage />
     </div>
   );
 }
