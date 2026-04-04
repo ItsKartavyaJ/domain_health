@@ -91,20 +91,31 @@ router.get('/daily-positive-replies', async (req, res) => {
 router.get('/response-stats', async (req, res) => {
   try {
     const { start_date, end_date } = dateParams(req);
-    const raw = await slFetch(
-      `/analytics/campaign/response-stats?start_date=${start_date}&end_date=${end_date}&full_data=true`
-    );
-    const stats = raw?.data?.campaign_wise_response_stats || [];
-    res.json({ ok: true, data: stats.map((c) => ({
-      campaign_id: c.email_campaign_id,
-      campaign_name: c.email_campaign_name,
-      total_sent: num(c.leads_contacted),
-      total_replies: num(c.total_response),
-      positive_replies: num(c.total_positive_response),
-      negative_replies: num(c.total_negative_response),
-      neutral_replies: num(c.total_neutral_response),
-      reply_rate: c.leads_contacted > 0 ? Math.round((num(c.total_response) / num(c.leads_contacted)) * 10000) / 100 : 0,
-    })) });
+    // Fetch both response-stats AND campaign-stats to get real sent counts
+    const [respRaw, campRaw] = await Promise.all([
+      slFetch(`/analytics/campaign/response-stats?start_date=${start_date}&end_date=${end_date}&full_data=true`),
+      slFetch(`/analytics/campaign/overall-stats?start_date=${start_date}&end_date=${end_date}&full_data=true&limit=200&offset=0`),
+    ]);
+    const stats = respRaw?.data?.campaign_wise_response_stats || [];
+    const campaigns = campRaw?.data?.campaign_wise_performance || [];
+    // Build lookup: campaign_id → actual sent count
+    const sentMap = {};
+    for (const c of campaigns) {
+      sentMap[String(c.id)] = num(c.sent);
+    }
+    res.json({ ok: true, data: stats.map((c) => {
+      const actualSent = sentMap[String(c.email_campaign_id)] || 0;
+      return {
+        campaign_id: c.email_campaign_id,
+        campaign_name: c.email_campaign_name,
+        total_sent: actualSent,
+        total_replies: num(c.total_response),
+        positive_replies: num(c.total_positive_response),
+        negative_replies: num(c.total_negative_response),
+        neutral_replies: num(c.total_neutral_response),
+        reply_rate: actualSent > 0 ? Math.round((num(c.total_response) / actualSent) * 10000) / 100 : 0,
+      };
+    }) });
   } catch (err) {
     console.error('[response-stats]', err.message);
     res.status(500).json({ error: err.message });
@@ -189,6 +200,28 @@ router.get('/mailbox-overall', async (req, res) => {
     res.json({ ok: true, data: raw?.data || {} });
   } catch (err) {
     console.error('[mailbox-overall]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/email-accounts', async (req, res) => {
+  try {
+    const limit = req.query.limit || '100';
+    const offset = req.query.offset || '0';
+    const raw = await slFetch(`/email-accounts?limit=${limit}&offset=${offset}`);
+    const accounts = Array.isArray(raw) ? raw : raw?.data || [];
+    res.json({ ok: true, data: accounts.map((a) => ({
+      id: a.id,
+      from_email: a.from_email,
+      is_smtp_success: a.is_smtp_success,
+      is_imap_success: a.is_imap_success,
+      type: a.type,
+      daily_sent_count: num(a.daily_sent_count),
+      message_per_day: num(a.message_per_day),
+      warmup_enabled: a.warmup_details?.warmup_enabled || false,
+    })) });
+  } catch (err) {
+    console.error('[email-accounts]', err.message);
     res.status(500).json({ error: err.message });
   }
 });

@@ -61,6 +61,11 @@ export async function getMailboxOverall() {
   return json.data || {};
 }
 
+export async function getEmailAccounts(limit = 100, offset = 0) {
+  const json = await authFetch(`/api/smartlead/email-accounts?${qs({ limit, offset })}`);
+  return json.data || [];
+}
+
 export async function getCampaignStats(startDate, endDate, limit = 50, offset = 0) {
   const json = await authFetch(`/api/smartlead/campaign-stats?${qs({ start_date: startDate, end_date: endDate, limit, offset })}`);
   return json.data || [];

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import DateFilter from '../components/DateFilter';
-import { getMailboxHealth, getDomainHealth, getProviderStats } from '../api/smartlead';
+import { getMailboxHealth, getDomainHealth, getProviderStats, getEmailAccounts } from '../api/smartlead';
 
 const TODAY = new Date().toISOString().slice(0, 10);
 const THIRTY_DAYS_AGO = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
@@ -33,14 +33,35 @@ export default function Mailboxes() {
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState({ key: 'sent', dir: 'desc' });
 
+  function mergeAccounts(healthList, accountList) {
+    const acctMap = {};
+    for (const a of accountList) {
+      if (a.from_email) acctMap[a.from_email.toLowerCase()] = a;
+    }
+    return healthList.map((m) => {
+      const acct = acctMap[(m.from_email || '').toLowerCase()] || {};
+      const connected = acct.is_smtp_success !== false;
+      const active = (m.sent || 0) > 0;
+      return {
+        ...m,
+        connected,
+        active,
+        status: !connected ? 'disconnected' : !active ? 'inactive' : 'active',
+        type: acct.type || '',
+        warmup_enabled: acct.warmup_enabled || false,
+      };
+    });
+  }
+
   useEffect(() => {
     Promise.all([
       getMailboxHealth(THIRTY_DAYS_AGO, TODAY),
       getDomainHealth(THIRTY_DAYS_AGO, TODAY),
       getProviderStats(THIRTY_DAYS_AGO, TODAY),
+      getEmailAccounts(),
     ])
-      .then(([m, d, p]) => {
-        setMailboxes(Array.isArray(m) ? m : []);
+      .then(([m, d, p, a]) => {
+        setMailboxes(mergeAccounts(Array.isArray(m) ? m : [], Array.isArray(a) ? a : []));
         setDomains(Array.isArray(d) ? d : []);
         setProviders(Array.isArray(p) ? p : []);
       })
@@ -57,9 +78,10 @@ export default function Mailboxes() {
       getMailboxHealth(s, e),
       getDomainHealth(s, e),
       getProviderStats(s, e),
+      getEmailAccounts(),
     ])
-      .then(([m, d, p]) => {
-        setMailboxes(Array.isArray(m) ? m : []);
+      .then(([m, d, p, a]) => {
+        setMailboxes(mergeAccounts(Array.isArray(m) ? m : [], Array.isArray(a) ? a : []));
         setDomains(Array.isArray(d) ? d : []);
         setProviders(Array.isArray(p) ? p : []);
       })
@@ -82,6 +104,9 @@ export default function Mailboxes() {
   const totalSent = mailboxes.reduce((s, m) => s + (m.sent || 0), 0);
   const totalReplied = mailboxes.reduce((s, m) => s + (m.replied || 0), 0);
   const totalBounced = mailboxes.reduce((s, m) => s + (m.bounced || 0), 0);
+  const activeCount = mailboxes.filter((m) => m.status === 'active').length;
+  const inactiveCount = mailboxes.filter((m) => m.status === 'inactive').length;
+  const disconnectedCount = mailboxes.filter((m) => m.status === 'disconnected').length;
 
   if (error) {
     return (
@@ -110,7 +135,7 @@ export default function Mailboxes() {
           {/* Summary stats */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: 12, marginBottom: 28 }}>
             {[
-              { label: 'Mailboxes', value: mailboxes.length, sub: 'active accounts' },
+              { label: 'Mailboxes', value: mailboxes.length, sub: `${activeCount} active · ${inactiveCount} idle · ${disconnectedCount} disconnected` },
               { label: 'Total Sent', value: totalSent.toLocaleString(), sub: 'emails sent' },
               { label: 'Total Replies', value: totalReplied.toLocaleString(), sub: totalSent > 0 ? `${Math.round((totalReplied / totalSent) * 100)}% reply rate` : '' },
               { label: 'Total Bounced', value: totalBounced.toLocaleString(), sub: totalSent > 0 ? `${Math.round((totalBounced / totalSent) * 100)}% bounce rate` : '', color: totalBounced > 0 ? 'var(--err-text)' : undefined },
@@ -189,6 +214,7 @@ export default function Mailboxes() {
                   <tr style={{ background: 'var(--surface)' }}>
                     {[
                       { key: 'from_email', label: 'Mailbox' },
+                      { key: 'status', label: 'Status' },
                       { key: 'sent', label: 'Sent' },
                       { key: 'opened', label: 'Opened' },
                       { key: 'replied', label: 'Replied' },
@@ -208,21 +234,24 @@ export default function Mailboxes() {
                 </thead>
                 <tbody>
                   {filtered.length === 0 && (
-                    <tr><td colSpan={7} style={{ padding: '32px 18px', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>No mailboxes found</td></tr>
+                    <tr><td colSpan={8} style={{ padding: '32px 18px', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>No mailboxes found</td></tr>
                   )}
                   {filtered.slice(0, 100).map((m, i) => {
                     const bounceRate = m.bounce_rate || 0;
+                    const statusType = m.status === 'active' ? 'ok' : m.status === 'disconnected' ? 'err' : 'warn';
+                    const statusLabel = m.status === 'active' ? 'Active' : m.status === 'disconnected' ? 'Disconnected' : 'Idle';
                     return (
                       <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
                         <td style={{ padding: '12px 18px', fontSize: 13, fontWeight: 500, maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.from_email || '—'}</td>
+                        <td style={{ padding: '12px 18px' }}><Badge type={statusType}>{statusLabel}</Badge></td>
                         <td style={{ padding: '12px 18px', fontSize: 13 }}>{(m.sent || 0).toLocaleString()}</td>
                         <td style={{ padding: '12px 18px', fontSize: 13 }}>{(m.opened || 0).toLocaleString()}</td>
                         <td style={{ padding: '12px 18px', fontSize: 13, fontWeight: 600, color: 'var(--ok-text)' }}>{(m.replied || 0).toLocaleString()}</td>
-                        <td style={{ padding: '12px 18px', fontSize: 13 }}>{m.reply_rate ? `${Math.round(m.reply_rate * 100) / 100}%` : '—'}</td>
+                        <td style={{ padding: '12px 18px', fontSize: 13 }}>{m.reply_rate ? `${m.reply_rate}%` : '—'}</td>
                         <td style={{ padding: '12px 18px', fontSize: 13 }}>{(m.bounced || 0).toLocaleString()}</td>
                         <td style={{ padding: '12px 18px' }}>
                           <Badge type={rateStatus(bounceRate)}>
-                            {bounceRate ? `${Math.round(bounceRate * 100) / 100}%` : '0%'}
+                            {bounceRate ? `${bounceRate}%` : '0%'}
                           </Badge>
                         </td>
                       </tr>
