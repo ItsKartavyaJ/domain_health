@@ -12,6 +12,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # influxdb2 extra needed for InfluxDB v2 output
 RUN pip install --no-cache-dir \
     "parsedmarc[influxdb2]" \
+    "influxdb-client[ciso]" \
     google-auth \
     google-auth-oauthlib \
     google-api-python-client
