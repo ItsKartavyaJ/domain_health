@@ -54,6 +54,34 @@ services:
       PARSEDMARC_INFLUXDB_ORG: "${INFLUXDB_ORG}"
       PARSEDMARC_INFLUXDB_BUCKET: "${INFLUXDB_DMARC_BUCKET}"
 
+    volumes:
+      - parsedmarc_output:/data
+    depends_on:
+      influxdb:
+        condition: service_healthy
+    networks:
+      - dmarc_net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ── influx_writer ──────────────────────────────────────────────────────────
+  influx_writer:
+    build:
+      context: ./influx_writer
+      dockerfile: Dockerfile
+    container_name: influx_writer
+    restart: unless-stopped
+    volumes:
+      - parsedmarc_output:/data
+    environment:
+      INFLUX_URL: "http://influxdb:8086"
+      INFLUX_ORG: "${INFLUXDB_ORG}"
+      INFLUX_TOKEN: "${INFLUXDB_TOKEN}"
+      INFLUX_BUCKET: "${INFLUXDB_DMARC_BUCKET}"
+      POLL_INTERVAL: "30"
     depends_on:
       influxdb:
         condition: service_healthy
@@ -158,6 +186,7 @@ volumes:
   grafana_data:
   caddy_data:
   caddy_config:
+  parsedmarc_output:
 
 networks:
   dmarc_net:
