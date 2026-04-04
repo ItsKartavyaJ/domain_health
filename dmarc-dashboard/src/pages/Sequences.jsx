@@ -132,17 +132,17 @@ export default function Sequences() {
               <div style={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 12, padding: 20, marginBottom: 28, boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
                 <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 16 }}>Performance by Sequence Step</div>
                 <ResponsiveContainer width="100%" height={320}>
-                  <BarChart data={chartData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                    <XAxis dataKey="name" tick={{ fontSize: 12, fill: 'var(--text)' }} />
-                    <YAxis tick={{ fontSize: 11, fill: 'var(--muted)' }} />
-                    <Tooltip contentStyle={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }} />
+                  <BarChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                    <XAxis dataKey="name" tick={{ fontSize: 12, fill: 'var(--text)' }} tickLine={false} axisLine={false} />
+                    <YAxis tick={{ fontSize: 10, fill: 'var(--muted)' }} tickLine={false} axisLine={false} width={40} />
+                    <Tooltip contentStyle={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12, padding: '8px 12px' }} cursor={{ fill: 'var(--surface)', opacity: 0.5 }} />
                     <Legend wrapperStyle={{ fontSize: 12 }} />
-                    <Bar dataKey="sent" fill="#3B82F6" name="Sent" radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="opened" fill="#8B5CF6" name="Opened" radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="replied" fill="#F59E0B" name="Replied" radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="positive" fill="#22C55E" name="Positive" radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="bounced" fill="#EF4444" name="Bounced" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="sent" fill="#3B82F6" name="Sent" radius={[4, 4, 0, 0]} barSize={16} />
+                    <Bar dataKey="opened" fill="#8B5CF6" name="Opened" radius={[4, 4, 0, 0]} barSize={16} />
+                    <Bar dataKey="replied" fill="#F59E0B" name="Replied" radius={[4, 4, 0, 0]} barSize={16} />
+                    <Bar dataKey="positive" fill="#22C55E" name="Positive" radius={[4, 4, 0, 0]} barSize={16} />
+                    <Bar dataKey="bounced" fill="#EF4444" name="Bounced" radius={[4, 4, 0, 0]} barSize={16} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>

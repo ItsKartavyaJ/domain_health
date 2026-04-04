@@ -155,14 +155,14 @@ export default function Mailboxes() {
               <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 16 }}>By Email Provider</div>
               {providers.length > 0 ? (
                 <ResponsiveContainer width="100%" height={220}>
-                  <BarChart data={providers.map((p) => ({ name: p.email_provider || 'Unknown', sent: p.sent || 0, replied: p.replied || 0, bounced: p.bounced || 0 }))}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                    <XAxis dataKey="name" tick={{ fontSize: 11, fill: 'var(--muted)' }} />
-                    <YAxis tick={{ fontSize: 11, fill: 'var(--muted)' }} />
-                    <Tooltip contentStyle={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }} />
-                    <Bar dataKey="sent" fill="#3B82F6" name="Sent" radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="replied" fill="#22C55E" name="Replied" radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="bounced" fill="#EF4444" name="Bounced" radius={[4, 4, 0, 0]} />
+                  <BarChart data={providers.map((p) => ({ name: p.email_provider || 'Unknown', sent: p.sent || 0, replied: p.replied || 0, bounced: p.bounced || 0 }))} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                    <XAxis dataKey="name" tick={{ fontSize: 11, fill: 'var(--muted)' }} tickLine={false} axisLine={false} />
+                    <YAxis tick={{ fontSize: 10, fill: 'var(--muted)' }} tickLine={false} axisLine={false} width={40} />
+                    <Tooltip contentStyle={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12, padding: '8px 12px' }} cursor={{ fill: 'var(--surface)', opacity: 0.5 }} />
+                    <Bar dataKey="sent" fill="#3B82F6" name="Sent" radius={[4, 4, 0, 0]} barSize={20} />
+                    <Bar dataKey="replied" fill="#22C55E" name="Replied" radius={[4, 4, 0, 0]} barSize={20} />
+                    <Bar dataKey="bounced" fill="#EF4444" name="Bounced" radius={[4, 4, 0, 0]} barSize={20} />
                   </BarChart>
                 </ResponsiveContainer>
               ) : (

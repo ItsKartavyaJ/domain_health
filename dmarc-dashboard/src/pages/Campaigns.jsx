@@ -105,12 +105,12 @@ export default function Campaigns() {
             <div style={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 12, padding: 20, boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
               <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 16 }}>Campaign Funnel</div>
               <ResponsiveContainer width="100%" height={240}>
-                <BarChart data={funnelData} layout="vertical">
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                  <XAxis type="number" tick={{ fontSize: 11, fill: 'var(--muted)' }} />
-                  <YAxis dataKey="name" type="category" tick={{ fontSize: 12, fill: 'var(--text)' }} width={70} />
-                  <Tooltip contentStyle={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }} />
-                  <Bar dataKey="value" radius={[0, 6, 6, 0]}>
+                <BarChart data={funnelData} layout="vertical" margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
+                  <XAxis type="number" tick={{ fontSize: 10, fill: 'var(--muted)' }} tickLine={false} axisLine={false} />
+                  <YAxis dataKey="name" type="category" tick={{ fontSize: 12, fill: 'var(--text)' }} width={70} tickLine={false} axisLine={false} />
+                  <Tooltip contentStyle={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12, padding: '8px 12px' }} cursor={{ fill: 'var(--surface)', opacity: 0.5 }} />
+                  <Bar dataKey="value" radius={[0, 6, 6, 0]} barSize={28}>
                     {funnelData.map((entry, i) => (
                       <Cell key={i} fill={entry.fill} />
                     ))}
@@ -140,14 +140,14 @@ export default function Campaigns() {
                     sent: d.sent || 0,
                     opened: d.opened || 0,
                     replied: d.replied || 0,
-                  }))}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                    <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'var(--muted)' }} />
-                    <YAxis tick={{ fontSize: 11, fill: 'var(--muted)' }} />
-                    <Tooltip contentStyle={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }} />
-                    <Area type="monotone" dataKey="sent" stroke="#3B82F6" fill="var(--info-bg)" name="Sent" />
-                    <Area type="monotone" dataKey="opened" stroke="#8B5CF6" fill="rgba(139,92,246,0.1)" name="Opened" />
-                    <Area type="monotone" dataKey="replied" stroke="#22C55E" fill="var(--ok-bg)" name="Replied" />
+                  }))} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                    <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'var(--muted)' }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
+                    <YAxis tick={{ fontSize: 10, fill: 'var(--muted)' }} tickLine={false} axisLine={false} width={40} />
+                    <Tooltip contentStyle={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12, padding: '8px 12px' }} cursor={{ stroke: 'var(--border)' }} />
+                    <Area type="monotone" dataKey="sent" stroke="#3B82F6" fill="var(--info-bg)" strokeWidth={2} dot={false} activeDot={{ r: 3 }} name="Sent" />
+                    <Area type="monotone" dataKey="opened" stroke="#8B5CF6" fill="rgba(139,92,246,0.1)" strokeWidth={2} dot={false} activeDot={{ r: 3 }} name="Opened" />
+                    <Area type="monotone" dataKey="replied" stroke="#22C55E" fill="var(--ok-bg)" strokeWidth={2} dot={false} activeDot={{ r: 3 }} name="Replied" />
                   </AreaChart>
                 </ResponsiveContainer>
               ) : (

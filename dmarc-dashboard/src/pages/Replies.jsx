@@ -87,16 +87,17 @@ export default function Replies() {
                 <ResponsiveContainer width="100%" height={260}>
                   <PieChart>
                     <Pie
-                      data={categories.map((c) => ({ name: c.name || 'Unknown', value: c.total_response || 0, sentiment: c.sentiment_type }))}
-                      cx="50%" cy="50%" innerRadius={60} outerRadius={100}
-                      dataKey="value" paddingAngle={2}
+                      data={categories.map((c) => ({ name: c.name || 'Unknown', value: c.total_response || 0 }))}
+                      cx="50%" cy="50%" innerRadius={55} outerRadius={95}
+                      dataKey="value" paddingAngle={2} strokeWidth={0}
                     >
                       {categories.map((_, i) => (
                         <Cell key={i} fill={COLORS[i % COLORS.length]} />
                       ))}
                     </Pie>
                     <Tooltip
-                      contentStyle={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }}
+                      contentStyle={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12, padding: '8px 12px' }}
+                      formatter={(value, name) => [`${value} replies`, name]}
                     />
                   </PieChart>
                 </ResponsiveContainer>
@@ -141,12 +142,12 @@ export default function Replies() {
             <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 16 }}>Daily Positive Reply Trend</div>
             {dailyReplies.length > 0 ? (
               <ResponsiveContainer width="100%" height={240}>
-                <AreaChart data={dailyReplies.map((d) => ({ date: d.date || '', positive: d.positive_replies || 0 }))}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                  <XAxis dataKey="date" tick={{ fontSize: 11, fill: 'var(--muted)' }} />
-                  <YAxis tick={{ fontSize: 11, fill: 'var(--muted)' }} />
-                  <Tooltip contentStyle={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }} />
-                  <Area type="monotone" dataKey="positive" stroke="#22C55E" fill="var(--ok-bg)" name="Positive Replies" />
+                <AreaChart data={dailyReplies.map((d) => ({ date: d.date || '', positive: d.positive_replies || 0 }))} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                  <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'var(--muted)' }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
+                  <YAxis tick={{ fontSize: 10, fill: 'var(--muted)' }} tickLine={false} axisLine={false} width={30} allowDecimals={false} />
+                  <Tooltip contentStyle={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12, padding: '8px 12px' }} cursor={{ stroke: 'var(--border)' }} />
+                  <Area type="monotone" dataKey="positive" stroke="#22C55E" fill="var(--ok-bg)" strokeWidth={2} dot={false} activeDot={{ r: 3 }} name="Positive Replies" />
                 </AreaChart>
               </ResponsiveContainer>
             ) : (

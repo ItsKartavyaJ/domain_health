@@ -127,13 +127,20 @@ router.get('/response-stats', async (req, res) => {
 router.get('/mailbox-health', async (req, res) => {
   try {
     const { start_date, end_date } = dateParams(req);
-    const limit = req.query.limit || '100';
-    const offset = req.query.offset || '0';
-    const raw = await slFetch(
-      `/analytics/mailbox/name-wise-health-metrics?start_date=${start_date}&end_date=${end_date}&full_data=true&limit=${limit}&offset=${offset}`
-    );
-    const metrics = raw?.data?.email_health_metrics || [];
-    res.json({ ok: true, data: metrics.map((m) => ({
+    // Paginate through all mailboxes
+    const all = [];
+    let offset = 0;
+    const pageSize = 100;
+    while (true) {
+      const raw = await slFetch(
+        `/analytics/mailbox/name-wise-health-metrics?start_date=${start_date}&end_date=${end_date}&full_data=true&limit=${pageSize}&offset=${offset}`
+      );
+      const page = raw?.data?.email_health_metrics || [];
+      all.push(...page);
+      if (page.length < pageSize) break;
+      offset += pageSize;
+    }
+    res.json({ ok: true, data: all.map((m) => ({
       from_email: m.from_email,
       sent: num(m.sent),
       opened: num(m.opened),
@@ -206,11 +213,17 @@ router.get('/mailbox-overall', async (req, res) => {
 
 router.get('/email-accounts', async (req, res) => {
   try {
-    const limit = req.query.limit || '100';
-    const offset = req.query.offset || '0';
-    const raw = await slFetch(`/email-accounts?limit=${limit}&offset=${offset}`);
-    const accounts = Array.isArray(raw) ? raw : raw?.data || [];
-    res.json({ ok: true, data: accounts.map((a) => ({
+    const all = [];
+    let offset = 0;
+    const pageSize = 100;
+    while (true) {
+      const raw = await slFetch(`/email-accounts?limit=${pageSize}&offset=${offset}`);
+      const page = Array.isArray(raw) ? raw : raw?.data || [];
+      all.push(...page);
+      if (page.length < pageSize) break;
+      offset += pageSize;
+    }
+    res.json({ ok: true, data: all.map((a) => ({
       id: a.id,
       from_email: a.from_email,
       is_smtp_success: a.is_smtp_success,
