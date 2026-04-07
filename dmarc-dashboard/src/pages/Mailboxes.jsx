@@ -18,8 +18,11 @@ function mergeAccounts(healthList, accountList) {
   for (const a of accountList) {
     if (a.from_email) acctMap[a.from_email.toLowerCase()] = a;
   }
-  return healthList.map((m) => {
-    const acct = acctMap[(m.from_email || '').toLowerCase()] || {};
+  const seen = new Set();
+  const merged = healthList.map((m) => {
+    const email = (m.from_email || '').toLowerCase();
+    seen.add(email);
+    const acct = acctMap[email] || {};
     const connected = acct.is_smtp_success !== false;
     const active = (m.sent || 0) > 0;
     return {
@@ -31,6 +34,24 @@ function mergeAccounts(healthList, accountList) {
       warmup_enabled: acct.warmup_enabled || false,
     };
   });
+  // Include accounts not in health data (disconnected/new accounts with no sends)
+  for (const a of accountList) {
+    const email = (a.from_email || '').toLowerCase();
+    if (email && !seen.has(email)) {
+      const connected = a.is_smtp_success !== false;
+      merged.push({
+        from_email: a.from_email,
+        sent: 0, opened: 0, replied: 0, bounced: 0,
+        reply_rate: 0, bounce_rate: 0,
+        connected,
+        active: false,
+        status: connected ? 'inactive' : 'disconnected',
+        type: a.type || '',
+        warmup_enabled: a.warmup_enabled || false,
+      });
+    }
+  }
+  return merged;
 }
 
 function loadMailboxData(s, e) {

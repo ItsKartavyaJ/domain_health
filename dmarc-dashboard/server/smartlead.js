@@ -288,13 +288,20 @@ router.get('/campaign-stats', async (req, res) => {
     const dates = dateParams(req, res);
     if (!dates) return;
     const { start_date, end_date } = dates;
-    const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 50));
-    const offset = Math.max(0, parseInt(req.query.offset, 10) || 0);
-    const raw = await slFetch(
-      `/analytics/campaign/overall-stats?start_date=${start_date}&end_date=${end_date}&full_data=true&limit=${limit}&offset=${offset}`
-    );
-    const campaigns = raw?.data?.campaign_wise_performance || [];
-    res.json({ ok: true, data: campaigns.map((c) => ({
+    const all = [];
+    let offset = 0;
+    const pageSize = 100;
+    let pageCount = 0;
+    while (pageCount++ < MAX_PAGES) {
+      const raw = await slFetch(
+        `/analytics/campaign/overall-stats?start_date=${start_date}&end_date=${end_date}&full_data=true&limit=${pageSize}&offset=${offset}`
+      );
+      const campaigns = raw?.data?.campaign_wise_performance || [];
+      all.push(...campaigns);
+      if (campaigns.length < pageSize) break;
+      offset += pageSize;
+    }
+    res.json({ ok: true, data: all.map((c) => ({
       campaign_id: c.id,
       campaign_name: c.campaign_name,
       sent: num(c.sent),
