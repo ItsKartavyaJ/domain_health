@@ -1,19 +1,14 @@
 import { useEffect, useState } from 'react';
 import { BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
 import DateFilter from '../components/DateFilter';
+import Badge from '../components/Badge';
 import { getCampaignStats, getDailyStats } from '../api/smartlead';
 
 const TODAY = new Date().toISOString().slice(0, 10);
 const THIRTY_DAYS_AGO = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
 
-function Badge({ type, children }) {
-  const bg = { ok: 'var(--ok-bg)', warn: 'var(--warn-bg)', err: 'var(--err-bg)' };
-  const text = { ok: 'var(--ok-text)', warn: 'var(--warn-text)', err: 'var(--err-text)' };
-  return (
-    <span style={{ fontSize: 11, padding: '3px 9px', borderRadius: 99, fontWeight: 600, background: bg[type], color: text[type], whiteSpace: 'nowrap' }}>
-      {children}
-    </span>
-  );
+function loadCampaignData(s, e) {
+  return Promise.all([getCampaignStats(s, e), getDailyStats(s, e)]);
 }
 
 export default function Campaigns() {
@@ -26,12 +21,14 @@ export default function Campaigns() {
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState({ key: 'sent', dir: 'desc' });
 
+  function applyResults([c, d]) {
+    setCampaigns(Array.isArray(c) ? c : []);
+    setDaily(Array.isArray(d) ? d : []);
+  }
+
   useEffect(() => {
-    Promise.all([getCampaignStats(THIRTY_DAYS_AGO, TODAY), getDailyStats(THIRTY_DAYS_AGO, TODAY)])
-      .then(([c, d]) => {
-        setCampaigns(Array.isArray(c) ? c : []);
-        setDaily(Array.isArray(d) ? d : []);
-      })
+    loadCampaignData(THIRTY_DAYS_AGO, TODAY)
+      .then(applyResults)
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, []);
@@ -41,11 +38,8 @@ export default function Campaigns() {
     setEndDate(e);
     setLoading(true);
     setError(null);
-    Promise.all([getCampaignStats(s, e), getDailyStats(s, e)])
-      .then(([c, d]) => {
-        setCampaigns(Array.isArray(c) ? c : []);
-        setDaily(Array.isArray(d) ? d : []);
-      })
+    loadCampaignData(s, e)
+      .then(applyResults)
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }

@@ -26,6 +26,9 @@ if (!INFLUX_URL || !INFLUX_TOKEN) {
 if (!FIREBASE_PROJECT_ID) {
   throw new Error('Missing FIREBASE_PROJECT_ID in environment');
 }
+if (!process.env.SMARTLEAD_API_KEY) {
+  throw new Error('Missing SMARTLEAD_API_KEY in environment');
+}
 
 // Initialise firebase-admin (credential-less — uses project ID for token verification only)
 if (!getApps().length) {

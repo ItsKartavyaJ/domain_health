@@ -9,6 +9,14 @@ const SENTIMENT_COLORS = { positive: '#22C55E', neutral: '#3B82F6', negative: '#
 const TODAY = new Date().toISOString().slice(0, 10);
 const THIRTY_DAYS_AGO = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
 
+function loadReplyData(s, e) {
+  return Promise.all([
+    getReplyCategories(s, e),
+    getDailyPositiveReplies(s, e),
+    getResponseStats(s, e),
+  ]);
+}
+
 export default function Replies() {
   const [startDate, setStartDate] = useState(THIRTY_DAYS_AGO);
   const [endDate, setEndDate] = useState(TODAY);
@@ -18,17 +26,15 @@ export default function Replies() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  function applyResults([cats, daily, resp]) {
+    setCategories(Array.isArray(cats) ? cats : []);
+    setDailyReplies(Array.isArray(daily) ? daily : []);
+    setResponseStats(Array.isArray(resp) ? resp : []);
+  }
+
   useEffect(() => {
-    Promise.all([
-      getReplyCategories(THIRTY_DAYS_AGO, TODAY),
-      getDailyPositiveReplies(THIRTY_DAYS_AGO, TODAY),
-      getResponseStats(THIRTY_DAYS_AGO, TODAY),
-    ])
-      .then(([cats, daily, resp]) => {
-        setCategories(Array.isArray(cats) ? cats : []);
-        setDailyReplies(Array.isArray(daily) ? daily : []);
-        setResponseStats(Array.isArray(resp) ? resp : []);
-      })
+    loadReplyData(THIRTY_DAYS_AGO, TODAY)
+      .then(applyResults)
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, []);
@@ -38,16 +44,8 @@ export default function Replies() {
     setEndDate(e);
     setLoading(true);
     setError(null);
-    Promise.all([
-      getReplyCategories(s, e),
-      getDailyPositiveReplies(s, e),
-      getResponseStats(s, e),
-    ])
-      .then(([cats, daily, resp]) => {
-        setCategories(Array.isArray(cats) ? cats : []);
-        setDailyReplies(Array.isArray(daily) ? daily : []);
-        setResponseStats(Array.isArray(resp) ? resp : []);
-      })
+    loadReplyData(s, e)
+      .then(applyResults)
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }

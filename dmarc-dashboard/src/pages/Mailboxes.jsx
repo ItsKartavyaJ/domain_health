@@ -1,25 +1,45 @@
 import { useEffect, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import DateFilter from '../components/DateFilter';
+import Badge from '../components/Badge';
 import { getMailboxHealth, getDomainHealth, getProviderStats, getEmailAccounts } from '../api/smartlead';
 
 const TODAY = new Date().toISOString().slice(0, 10);
 const THIRTY_DAYS_AGO = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
 
-function Badge({ type, children }) {
-  const bg = { ok: 'var(--ok-bg)', warn: 'var(--warn-bg)', err: 'var(--err-bg)' };
-  const text = { ok: 'var(--ok-text)', warn: 'var(--warn-text)', err: 'var(--err-text)' };
-  return (
-    <span style={{ fontSize: 11, padding: '3px 9px', borderRadius: 99, fontWeight: 600, background: bg[type], color: text[type], whiteSpace: 'nowrap' }}>
-      {children}
-    </span>
-  );
-}
-
 function rateStatus(rate) {
   if (rate > 3) return 'err';
   if (rate > 1) return 'warn';
   return 'ok';
+}
+
+function mergeAccounts(healthList, accountList) {
+  const acctMap = {};
+  for (const a of accountList) {
+    if (a.from_email) acctMap[a.from_email.toLowerCase()] = a;
+  }
+  return healthList.map((m) => {
+    const acct = acctMap[(m.from_email || '').toLowerCase()] || {};
+    const connected = acct.is_smtp_success !== false;
+    const active = (m.sent || 0) > 0;
+    return {
+      ...m,
+      connected,
+      active,
+      status: !connected ? 'disconnected' : !active ? 'inactive' : 'active',
+      type: acct.type || '',
+      warmup_enabled: acct.warmup_enabled || false,
+    };
+  });
+}
+
+function loadMailboxData(s, e) {
+  return Promise.all([
+    getMailboxHealth(s, e),
+    getDomainHealth(s, e),
+    getProviderStats(s, e),
+    getEmailAccounts(),
+  ]);
 }
 
 export default function Mailboxes() {
@@ -33,38 +53,15 @@ export default function Mailboxes() {
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState({ key: 'sent', dir: 'desc' });
 
-  function mergeAccounts(healthList, accountList) {
-    const acctMap = {};
-    for (const a of accountList) {
-      if (a.from_email) acctMap[a.from_email.toLowerCase()] = a;
-    }
-    return healthList.map((m) => {
-      const acct = acctMap[(m.from_email || '').toLowerCase()] || {};
-      const connected = acct.is_smtp_success !== false;
-      const active = (m.sent || 0) > 0;
-      return {
-        ...m,
-        connected,
-        active,
-        status: !connected ? 'disconnected' : !active ? 'inactive' : 'active',
-        type: acct.type || '',
-        warmup_enabled: acct.warmup_enabled || false,
-      };
-    });
+  function applyResults([m, d, p, a]) {
+    setMailboxes(mergeAccounts(Array.isArray(m) ? m : [], Array.isArray(a) ? a : []));
+    setDomains(Array.isArray(d) ? d : []);
+    setProviders(Array.isArray(p) ? p : []);
   }
 
   useEffect(() => {
-    Promise.all([
-      getMailboxHealth(THIRTY_DAYS_AGO, TODAY),
-      getDomainHealth(THIRTY_DAYS_AGO, TODAY),
-      getProviderStats(THIRTY_DAYS_AGO, TODAY),
-      getEmailAccounts(),
-    ])
-      .then(([m, d, p, a]) => {
-        setMailboxes(mergeAccounts(Array.isArray(m) ? m : [], Array.isArray(a) ? a : []));
-        setDomains(Array.isArray(d) ? d : []);
-        setProviders(Array.isArray(p) ? p : []);
-      })
+    loadMailboxData(THIRTY_DAYS_AGO, TODAY)
+      .then(applyResults)
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, []);
@@ -74,17 +71,8 @@ export default function Mailboxes() {
     setEndDate(e);
     setLoading(true);
     setError(null);
-    Promise.all([
-      getMailboxHealth(s, e),
-      getDomainHealth(s, e),
-      getProviderStats(s, e),
-      getEmailAccounts(),
-    ])
-      .then(([m, d, p, a]) => {
-        setMailboxes(mergeAccounts(Array.isArray(m) ? m : [], Array.isArray(a) ? a : []));
-        setDomains(Array.isArray(d) ? d : []);
-        setProviders(Array.isArray(p) ? p : []);
-      })
+    loadMailboxData(s, e)
+      .then(applyResults)
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }

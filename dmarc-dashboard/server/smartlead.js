@@ -3,26 +3,46 @@ import { Router } from 'express';
 const router = Router();
 const SL_BASE = 'https://server.smartlead.ai/api/v1';
 const SL_KEY = () => process.env.SMARTLEAD_API_KEY || '';
+const FETCH_TIMEOUT_MS = 15_000;
+const MAX_PAGES = 50;
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 async function slFetch(path, opts = {}) {
   const sep = path.includes('?') ? '&' : '?';
   const url = `${SL_BASE}${path}${sep}api_key=${SL_KEY()}`;
-  const res = await fetch(url, {
-    method: opts.method || 'GET',
-    headers: opts.body ? { 'Content-Type': 'application/json' } : {},
-    body: opts.body ? JSON.stringify(opts.body) : undefined,
-  });
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Smartlead ${res.status}: ${body.slice(0, 200)}`);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, {
+      method: opts.method || 'GET',
+      headers: opts.body ? { 'Content-Type': 'application/json' } : {},
+      body: opts.body ? JSON.stringify(opts.body) : undefined,
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`Smartlead ${res.status}: ${body.slice(0, 200)}`);
+    }
+    return res.json();
+  } finally {
+    clearTimeout(timer);
   }
-  return res.json();
 }
 
-function dateParams(req) {
+function dateParams(req, res) {
   const end = req.query.end_date || new Date().toISOString().slice(0, 10);
   const start = req.query.start_date || new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+  if ((req.query.start_date && !DATE_RE.test(req.query.start_date)) ||
+      (req.query.end_date && !DATE_RE.test(req.query.end_date))) {
+    res.status(400).json({ error: 'Invalid date format. Use YYYY-MM-DD.' });
+    return null;
+  }
   return { start_date: start, end_date: end };
+}
+
+function validPositiveInt(value) {
+  const n = parseInt(value, 10);
+  return Number.isInteger(n) && n > 0 ? n : null;
 }
 
 function num(v) { return typeof v === 'string' ? Number(v) || 0 : v || 0; }
@@ -31,7 +51,9 @@ function num(v) { return typeof v === 'string' ? Number(v) || 0 : v || 0; }
 
 router.get('/reply-categories', async (req, res) => {
   try {
-    const { start_date, end_date } = dateParams(req);
+    const dates = dateParams(req, res);
+    if (!dates) return;
+    const { start_date, end_date } = dates;
     const raw = await slFetch(
       `/analytics/lead/category-wise-response?start_date=${start_date}&end_date=${end_date}`
     );
@@ -44,13 +66,15 @@ router.get('/reply-categories', async (req, res) => {
     })) });
   } catch (err) {
     console.error('[reply-categories]', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Failed to load reply categories' });
   }
 });
 
 router.get('/daily-stats', async (req, res) => {
   try {
-    const { start_date, end_date } = dateParams(req);
+    const dates = dateParams(req, res);
+    if (!dates) return;
+    const { start_date, end_date } = dates;
     const raw = await slFetch(
       `/analytics/day-wise-overall-stats?start_date=${start_date}&end_date=${end_date}`
     );
@@ -66,13 +90,15 @@ router.get('/daily-stats', async (req, res) => {
     })) });
   } catch (err) {
     console.error('[daily-stats]', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Failed to load daily stats' });
   }
 });
 
 router.get('/daily-positive-replies', async (req, res) => {
   try {
-    const { start_date, end_date } = dateParams(req);
+    const dates = dateParams(req, res);
+    if (!dates) return;
+    const { start_date, end_date } = dates;
     const raw = await slFetch(
       `/analytics/day-wise-positive-reply-stats?start_date=${start_date}&end_date=${end_date}`
     );
@@ -84,21 +110,21 @@ router.get('/daily-positive-replies', async (req, res) => {
     })) });
   } catch (err) {
     console.error('[daily-positive-replies]', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Failed to load daily positive replies' });
   }
 });
 
 router.get('/response-stats', async (req, res) => {
   try {
-    const { start_date, end_date } = dateParams(req);
-    // Fetch both response-stats AND campaign-stats to get real sent counts
+    const dates = dateParams(req, res);
+    if (!dates) return;
+    const { start_date, end_date } = dates;
     const [respRaw, campRaw] = await Promise.all([
       slFetch(`/analytics/campaign/response-stats?start_date=${start_date}&end_date=${end_date}&full_data=true`),
       slFetch(`/analytics/campaign/overall-stats?start_date=${start_date}&end_date=${end_date}&full_data=true&limit=200&offset=0`),
     ]);
     const stats = respRaw?.data?.campaign_wise_response_stats || [];
     const campaigns = campRaw?.data?.campaign_wise_performance || [];
-    // Build lookup: campaign_id → actual sent count
     const sentMap = {};
     for (const c of campaigns) {
       sentMap[String(c.id)] = num(c.sent);
@@ -118,7 +144,7 @@ router.get('/response-stats', async (req, res) => {
     }) });
   } catch (err) {
     console.error('[response-stats]', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Failed to load response stats' });
   }
 });
 
@@ -126,12 +152,14 @@ router.get('/response-stats', async (req, res) => {
 
 router.get('/mailbox-health', async (req, res) => {
   try {
-    const { start_date, end_date } = dateParams(req);
-    // Paginate through all mailboxes
+    const dates = dateParams(req, res);
+    if (!dates) return;
+    const { start_date, end_date } = dates;
     const all = [];
     let offset = 0;
     const pageSize = 100;
-    while (true) {
+    let pageCount = 0;
+    while (pageCount++ < MAX_PAGES) {
       const raw = await slFetch(
         `/analytics/mailbox/name-wise-health-metrics?start_date=${start_date}&end_date=${end_date}&full_data=true&limit=${pageSize}&offset=${offset}`
       );
@@ -153,18 +181,29 @@ router.get('/mailbox-health', async (req, res) => {
     })) });
   } catch (err) {
     console.error('[mailbox-health]', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Failed to load mailbox health' });
   }
 });
 
 router.get('/domain-health', async (req, res) => {
   try {
-    const { start_date, end_date } = dateParams(req);
-    const raw = await slFetch(
-      `/analytics/mailbox/domain-wise-health-metrics?start_date=${start_date}&end_date=${end_date}&full_data=true&limit=100&offset=0`
-    );
-    const metrics = raw?.data?.domain_health_metrics || [];
-    res.json({ ok: true, data: metrics.map((d) => ({
+    const dates = dateParams(req, res);
+    if (!dates) return;
+    const { start_date, end_date } = dates;
+    const all = [];
+    let offset = 0;
+    const pageSize = 100;
+    let pageCount = 0;
+    while (pageCount++ < MAX_PAGES) {
+      const raw = await slFetch(
+        `/analytics/mailbox/domain-wise-health-metrics?start_date=${start_date}&end_date=${end_date}&full_data=true&limit=${pageSize}&offset=${offset}`
+      );
+      const metrics = raw?.data?.domain_health_metrics || [];
+      all.push(...metrics);
+      if (metrics.length < pageSize) break;
+      offset += pageSize;
+    }
+    res.json({ ok: true, data: all.map((d) => ({
       domain: d.domain,
       sent: num(d.sent),
       opened: num(d.opened),
@@ -175,13 +214,15 @@ router.get('/domain-health', async (req, res) => {
     })) });
   } catch (err) {
     console.error('[domain-health]', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Failed to load domain health' });
   }
 });
 
 router.get('/provider-stats', async (req, res) => {
   try {
-    const { start_date, end_date } = dateParams(req);
+    const dates = dateParams(req, res);
+    if (!dates) return;
+    const { start_date, end_date } = dates;
     const raw = await slFetch(
       `/analytics/mailbox/provider-wise-overall-performance?start_date=${start_date}&end_date=${end_date}&full_data=true`
     );
@@ -197,7 +238,7 @@ router.get('/provider-stats', async (req, res) => {
     })) });
   } catch (err) {
     console.error('[provider-stats]', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Failed to load provider stats' });
   }
 });
 
@@ -207,7 +248,7 @@ router.get('/mailbox-overall', async (req, res) => {
     res.json({ ok: true, data: raw?.data || {} });
   } catch (err) {
     console.error('[mailbox-overall]', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Failed to load mailbox overall stats' });
   }
 });
 
@@ -216,7 +257,8 @@ router.get('/email-accounts', async (req, res) => {
     const all = [];
     let offset = 0;
     const pageSize = 100;
-    while (true) {
+    let pageCount = 0;
+    while (pageCount++ < MAX_PAGES) {
       const raw = await slFetch(`/email-accounts?limit=${pageSize}&offset=${offset}`);
       const page = Array.isArray(raw) ? raw : raw?.data || [];
       all.push(...page);
@@ -235,7 +277,7 @@ router.get('/email-accounts', async (req, res) => {
     })) });
   } catch (err) {
     console.error('[email-accounts]', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Failed to load email accounts' });
   }
 });
 
@@ -243,9 +285,11 @@ router.get('/email-accounts', async (req, res) => {
 
 router.get('/campaign-stats', async (req, res) => {
   try {
-    const { start_date, end_date } = dateParams(req);
-    const limit = req.query.limit || '50';
-    const offset = req.query.offset || '0';
+    const dates = dateParams(req, res);
+    if (!dates) return;
+    const { start_date, end_date } = dates;
+    const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 50));
+    const offset = Math.max(0, parseInt(req.query.offset, 10) || 0);
     const raw = await slFetch(
       `/analytics/campaign/overall-stats?start_date=${start_date}&end_date=${end_date}&full_data=true&limit=${limit}&offset=${offset}`
     );
@@ -265,7 +309,7 @@ router.get('/campaign-stats', async (req, res) => {
     })) });
   } catch (err) {
     console.error('[campaign-stats]', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Failed to load campaign stats' });
   }
 });
 
@@ -276,7 +320,7 @@ router.get('/campaigns', async (req, res) => {
     res.json({ ok: true, data: list });
   } catch (err) {
     console.error('[campaigns]', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Failed to load campaigns' });
   }
 });
 
@@ -284,26 +328,31 @@ router.get('/campaigns', async (req, res) => {
 
 router.get('/sequence-analytics/:campaignId', async (req, res) => {
   try {
-    const { start_date, end_date } = dateParams(req);
+    const id = validPositiveInt(req.params.campaignId);
+    if (!id) return res.status(400).json({ error: 'Invalid campaign ID' });
+    const dates = dateParams(req, res);
+    if (!dates) return;
+    const { start_date, end_date } = dates;
     const raw = await slFetch(
-      `/campaigns/${req.params.campaignId}/sequence-analytics?start_date=${start_date}&end_date=${end_date}`
+      `/campaigns/${id}/sequence-analytics?start_date=${start_date}&end_date=${end_date}`
     );
-    // Normalize — Smartlead may return data in various shapes
     const seqs = Array.isArray(raw?.data) ? raw.data : raw?.data?.sequence_analytics || [];
     res.json({ ok: true, data: seqs });
   } catch (err) {
     console.error('[sequence-analytics]', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Failed to load sequence analytics' });
   }
 });
 
 router.get('/campaign-sequences/:campaignId', async (req, res) => {
   try {
-    const raw = await slFetch(`/campaigns/${req.params.campaignId}/sequences`);
+    const id = validPositiveInt(req.params.campaignId);
+    if (!id) return res.status(400).json({ error: 'Invalid campaign ID' });
+    const raw = await slFetch(`/campaigns/${id}/sequences`);
     res.json({ ok: true, data: raw?.data || [] });
   } catch (err) {
     console.error('[campaign-sequences]', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Failed to load campaign sequences' });
   }
 });
 
@@ -311,14 +360,23 @@ router.get('/campaign-sequences/:campaignId', async (req, res) => {
 
 router.post('/inbox-replies', async (req, res) => {
   try {
+    const body = req.body;
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      return res.status(400).json({ error: 'Request body must be a JSON object' });
+    }
+    const allowed = ['offset', 'limit', 'campaign_id', 'lead_category_id', 'message_type'];
+    const filtered = {};
+    for (const key of allowed) {
+      if (body[key] !== undefined) filtered[key] = body[key];
+    }
     const raw = await slFetch('/master-inbox/inbox-replies', {
       method: 'POST',
-      body: req.body,
+      body: filtered,
     });
     res.json({ ok: true, data: raw?.data || [] });
   } catch (err) {
     console.error('[inbox-replies]', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Failed to load inbox replies' });
   }
 });
 

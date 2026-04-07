@@ -41,13 +41,13 @@ export default function Sequences() {
 
   function onCampaignChange(id) {
     setSelectedCampaign(id);
-    fetchSequences(id, startDate, endDate, setSequences, setError, setSeqLoading);
+    fetchSequences(id, startDate, endDate);
   }
 
   function onDateChange(s, e) {
     setStartDate(s);
     setEndDate(e);
-    if (selectedCampaign) fetchSequences(selectedCampaign, s, e, setSequences, setError, setSeqLoading);
+    if (selectedCampaign) fetchSequences(selectedCampaign, s, e);
   }
 
   const chartData = sequences.map((seq, i) => ({

@@ -5,6 +5,7 @@ influx_writer.py — watches parsedmarc's aggregate.json and writes to InfluxDB.
 parsedmarc v8 appends aggregate report JSON objects to {output}/aggregate.json.
 We tail this file, parse each new report, and POST line protocol to InfluxDB v2.
 """
+import collections
 import json
 import os
 import time
@@ -19,6 +20,31 @@ INFLUX_TOKEN = os.environ.get("INFLUX_TOKEN", "")
 INFLUX_BUCKET = os.environ.get("INFLUX_BUCKET", "dmarc")
 AGGREGATE_FILE = Path(os.environ.get("AGGREGATE_FILE", "/data/aggregate.json"))
 POLL_INTERVAL = int(os.environ.get("POLL_INTERVAL", "30"))
+MAX_PROCESSED_IDS = 10_000
+
+
+class BoundedIdSet:
+    """A set that evicts the oldest entries when it exceeds max_size."""
+
+    def __init__(self, max_size: int = MAX_PROCESSED_IDS) -> None:
+        self._max_size = max_size
+        self._set: set[str] = set()
+        self._order: collections.deque[str] = collections.deque()
+
+    def __contains__(self, item: str) -> bool:
+        return item in self._set
+
+    def __len__(self) -> int:
+        return len(self._set)
+
+    def add(self, item: str) -> None:
+        if item in self._set:
+            return
+        self._set.add(item)
+        self._order.append(item)
+        while len(self._set) > self._max_size:
+            oldest = self._order.popleft()
+            self._set.discard(oldest)
 
 
 def escape_tag(value: str) -> str:
@@ -120,7 +146,7 @@ def main() -> None:
     print(f"[INFO] influx -> {INFLUX_URL} org={INFLUX_ORG} bucket={INFLUX_BUCKET}", flush=True)
 
     last_size = 0
-    processed_ids = set()
+    processed_ids = BoundedIdSet()
 
     # Load existing processed IDs if file already exists
     if AGGREGATE_FILE.exists():
