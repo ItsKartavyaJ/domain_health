@@ -304,6 +304,7 @@ router.get('/campaign-stats', async (req, res) => {
     res.json({ ok: true, data: all.map((c) => ({
       campaign_id: c.id,
       campaign_name: c.campaign_name,
+      status: (c.status || '').toUpperCase(),
       sent: num(c.sent),
       opened: num(c.opened),
       replied: num(c.replied),

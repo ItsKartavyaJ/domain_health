@@ -19,6 +19,7 @@ export default function Campaigns() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
   const [sort, setSort] = useState({ key: 'sent', dir: 'desc' });
 
   function applyResults([c, d]) {
@@ -49,6 +50,7 @@ export default function Campaigns() {
   }
 
   const filtered = campaigns
+    .filter((c) => statusFilter === 'all' || c.status === statusFilter)
     .filter((c) => (c.campaign_name || '').toLowerCase().includes(search.toLowerCase()))
     .sort((a, b) => {
       const av = a[sort.key] || 0;
@@ -157,12 +159,25 @@ export default function Campaigns() {
                 <div style={{ fontSize: 14, fontWeight: 600 }}>All Campaigns</div>
                 <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>Performance metrics per campaign</div>
               </div>
-              <input
-                placeholder="Search campaigns..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                style={{ fontSize: 13, padding: '7px 12px', width: 220, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)' }}
-              />
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  style={{ fontSize: 13, padding: '7px 12px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)' }}
+                >
+                  <option value="all">All Status</option>
+                  <option value="ACTIVE">Active</option>
+                  <option value="PAUSED">Paused</option>
+                  <option value="COMPLETED">Completed</option>
+                  <option value="DRAFTED">Drafted</option>
+                </select>
+                <input
+                  placeholder="Search campaigns..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  style={{ fontSize: 13, padding: '7px 12px', width: 220, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)' }}
+                />
+              </div>
             </div>
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
