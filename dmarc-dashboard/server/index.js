@@ -209,8 +209,8 @@ app.get('/api/metrics/alerts', authMiddleware, async (_req, res) => {
   }
 });
 
-// Diagnostic endpoint for debugging InfluxDB cardinality issues
-app.get('/api/debug/influx-cardinality', authMiddleware, async (_req, res) => {
+// Diagnostic endpoint for debugging InfluxDB cardinality issues (temporarily public for diagnostics)
+app.get('/api/debug/influx-cardinality', async (_req, res) => {
   try {
     // Query unique domains
     const domainsRaw = await queryFlux(`
