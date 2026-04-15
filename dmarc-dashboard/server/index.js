@@ -209,6 +209,44 @@ app.get('/api/metrics/alerts', authMiddleware, async (_req, res) => {
   }
 });
 
+// Diagnostic endpoint for debugging InfluxDB cardinality issues
+app.get('/api/debug/influx-cardinality', authMiddleware, async (_req, res) => {
+  try {
+    // Query unique domains
+    const domainsRaw = await queryFlux(`
+from(bucket: "${INFLUX_BUCKET}")
+  |> range(start: -30d)
+  |> filter(fn: (r) => r._measurement == "dmarc_aggregate")
+  |> group(columns: ["header_from"])
+  |> first()
+  |> keep(columns: ["header_from"])
+`);
+
+    const uniqueDomains = domainsRaw
+      .filter((r) => r.header_from)
+      .map((r) => r.header_from);
+
+    // Query total message count
+    const countRaw = await queryFlux(`
+from(bucket: "${INFLUX_BUCKET}")
+  |> range(start: -30d)
+  |> filter(fn: (r) => r._measurement == "dmarc_aggregate")
+  |> filter(fn: (r) => r._field == "message_count")
+  |> count()
+`);
+
+    return res.json({
+      ok: true,
+      unique_domains: uniqueDomains,
+      unique_domain_count: uniqueDomains.length,
+      total_records: countRaw.length > 0 ? parseInt(countRaw[0]._value || 0) : 0,
+    });
+  } catch (err) {
+    console.error('[debug-cardinality]', err.message);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 app.use('/api/smartlead', authMiddleware, smartleadRouter);
 
 app.use(express.static(distPath));
