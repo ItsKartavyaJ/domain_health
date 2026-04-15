@@ -288,23 +288,39 @@ router.get('/campaign-stats', async (req, res) => {
     const dates = dateParams(req, res);
     if (!dates) return;
     const { start_date, end_date } = dates;
-    const all = [];
-    let offset = 0;
-    const pageSize = 100;
-    let pageCount = 0;
-    while (pageCount++ < MAX_PAGES) {
-      const raw = await slFetch(
-        `/analytics/campaign/overall-stats?start_date=${start_date}&end_date=${end_date}&full_data=true&limit=${pageSize}&offset=${offset}`
-      );
-      const campaigns = raw?.data?.campaign_wise_performance || [];
-      all.push(...campaigns);
-      if (campaigns.length < pageSize) break;
-      offset += pageSize;
+
+    // Fetch campaign stats and campaign metadata in parallel
+    const [statsRaw, metaRaw] = await Promise.all([
+      (async () => {
+        const all = [];
+        let offset = 0;
+        const pageSize = 100;
+        let pageCount = 0;
+        while (pageCount++ < MAX_PAGES) {
+          const raw = await slFetch(
+            `/analytics/campaign/overall-stats?start_date=${start_date}&end_date=${end_date}&full_data=true&limit=${pageSize}&offset=${offset}`
+          );
+          const campaigns = raw?.data?.campaign_wise_performance || [];
+          all.push(...campaigns);
+          if (campaigns.length < pageSize) break;
+          offset += pageSize;
+        }
+        return all;
+      })(),
+      slFetch('/analytics/campaign/list'),
+    ]);
+
+    // Build status map from campaign metadata
+    const statusMap = {};
+    const metaList = metaRaw?.data?.campaign_list || [];
+    for (const camp of metaList) {
+      statusMap[String(camp.id)] = camp.status || '';
     }
-    res.json({ ok: true, data: all.map((c) => ({
+
+    res.json({ ok: true, data: statsRaw.map((c) => ({
       campaign_id: c.id,
       campaign_name: c.campaign_name,
-      status: (c.status || '').toUpperCase(),
+      status: (statusMap[String(c.id)] || c.status || '').toUpperCase(),
       sent: num(c.sent),
       opened: num(c.opened),
       replied: num(c.replied),
