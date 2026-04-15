@@ -121,6 +121,7 @@ from(bucket: "${INFLUX_BUCKET}")
     )
   |> keep(columns: ["header_from", "total", "passed", "spf_aligned_count", "dkim_aligned_count"])
   |> sort(columns: ["total"], desc: true)
+  |> limit(n: 1000)
 `);
   } catch (err) {
     // Bucket empty or no dmarc_aggregate data yet — return empty
