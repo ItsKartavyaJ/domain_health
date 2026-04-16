@@ -107,16 +107,24 @@ from(bucket: "${INFLUX_BUCKET}")
   |> range(start: -30d)
   |> filter(fn: (r) => r._measurement == "dmarc_aggregate")
   |> filter(fn: (r) => r._field == "message_count" or r._field == "passed_dmarc" or r._field == "spf_aligned" or r._field == "dkim_aligned")
-  |> pivot(rowKey: ["_time", "header_from"], columnKey: ["_field"], valueColumn: "_value")
+  |> map(fn: (r) => ({
+      _time: r._time,
+      _measurement: r._measurement,
+      header_from: r.header_from,
+      _field: r._field,
+      _value: string(v: r._value),
+    }))
+  |> group(columns: ["_measurement", "header_from"])
+  |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
   |> group(columns: ["header_from"])
   |> reduce(
       identity: {header_from: "", total: 0.0, passed: 0.0, spf_aligned_count: 0.0, dkim_aligned_count: 0.0},
       fn: (r, accumulator) => ({
         header_from: r.header_from,
-        total: accumulator.total + float(v: if exists r.message_count then r.message_count else 0),
-        passed: accumulator.passed + (if exists r.passed_dmarc and (r.passed_dmarc == true or r.passed_dmarc == "true") then float(v: if exists r.message_count then r.message_count else 0) else 0.0),
-        spf_aligned_count: accumulator.spf_aligned_count + (if exists r.spf_aligned and (r.spf_aligned == true or r.spf_aligned == "true") then float(v: if exists r.message_count then r.message_count else 0) else 0.0),
-        dkim_aligned_count: accumulator.dkim_aligned_count + (if exists r.dkim_aligned and (r.dkim_aligned == true or r.dkim_aligned == "true") then float(v: if exists r.message_count then r.message_count else 0) else 0.0),
+        total: accumulator.total + (if exists r.message_count then float(v: r.message_count) else 0.0),
+        passed: accumulator.passed + (if exists r.passed_dmarc and r.passed_dmarc == "true" and exists r.message_count then float(v: r.message_count) else 0.0),
+        spf_aligned_count: accumulator.spf_aligned_count + (if exists r.spf_aligned and r.spf_aligned == "true" and exists r.message_count then float(v: r.message_count) else 0.0),
+        dkim_aligned_count: accumulator.dkim_aligned_count + (if exists r.dkim_aligned and r.dkim_aligned == "true" and exists r.message_count then float(v: r.message_count) else 0.0),
       })
     )
   |> keep(columns: ["header_from", "total", "passed", "spf_aligned_count", "dkim_aligned_count"])
