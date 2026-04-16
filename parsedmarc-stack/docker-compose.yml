@@ -31,7 +31,7 @@ services:
       # ── Mailbox watch settings ────────────────────────────────────────────
       PARSEDMARC_MAILBOX_WATCH: "true"
       PARSEDMARC_MAILBOX_DELETE: "false"          # archive, don't delete
-      PARSEDMARC_MAILBOX_BATCH_SIZE: "10"
+      PARSEDMARC_MAILBOX_BATCH_SIZE: "${PARSEDMARC_MAILBOX_BATCH_SIZE:-10}"
       PARSEDMARC_MAILBOX_CHECK_TIMEOUT: "30"
       PARSEDMARC_MAILBOX_REPORTS_FOLDER: "INBOX"
       PARSEDMARC_MAILBOX_ARCHIVE_FOLDER: "Archive"
