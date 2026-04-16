@@ -114,9 +114,9 @@ from(bucket: "${INFLUX_BUCKET}")
       fn: (r, accumulator) => ({
         header_from: r.header_from,
         total: accumulator.total + float(v: if exists r.message_count then r.message_count else 0),
-        passed: accumulator.passed + (if exists r.passed_dmarc and bool(v: r.passed_dmarc) then float(v: if exists r.message_count then r.message_count else 0) else 0.0),
-        spf_aligned_count: accumulator.spf_aligned_count + (if exists r.spf_aligned and bool(v: r.spf_aligned) then float(v: if exists r.message_count then r.message_count else 0) else 0.0),
-        dkim_aligned_count: accumulator.dkim_aligned_count + (if exists r.dkim_aligned and bool(v: r.dkim_aligned) then float(v: if exists r.message_count then r.message_count else 0) else 0.0),
+        passed: accumulator.passed + (if exists r.passed_dmarc and (r.passed_dmarc == true or r.passed_dmarc == "true") then float(v: if exists r.message_count then r.message_count else 0) else 0.0),
+        spf_aligned_count: accumulator.spf_aligned_count + (if exists r.spf_aligned and (r.spf_aligned == true or r.spf_aligned == "true") then float(v: if exists r.message_count then r.message_count else 0) else 0.0),
+        dkim_aligned_count: accumulator.dkim_aligned_count + (if exists r.dkim_aligned and (r.dkim_aligned == true or r.dkim_aligned == "true") then float(v: if exists r.message_count then r.message_count else 0) else 0.0),
       })
     )
   |> keep(columns: ["header_from", "total", "passed", "spf_aligned_count", "dkim_aligned_count"])
@@ -212,14 +212,13 @@ app.get('/api/metrics/alerts', authMiddleware, async (_req, res) => {
 // Diagnostic endpoint for debugging InfluxDB cardinality issues (temporarily public for diagnostics)
 app.get('/api/debug/influx-cardinality', async (_req, res) => {
   try {
-    // Query unique domains
+    // Query unique domains using distinct() to avoid schema collision
     const domainsRaw = await queryFlux(`
 from(bucket: "${INFLUX_BUCKET}")
   |> range(start: -30d)
   |> filter(fn: (r) => r._measurement == "dmarc_aggregate")
-  |> group(columns: ["header_from"])
-  |> first()
   |> keep(columns: ["header_from"])
+  |> distinct(column: "header_from")
 `);
 
     const uniqueDomains = domainsRaw
