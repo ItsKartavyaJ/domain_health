@@ -4,7 +4,7 @@ cat > /tmp/parsedmarc.ini << EOF
 [general]
 save_aggregate = True
 save_forensic = True
-output = /data
+# output = /data
 
 [imap]
 host = ${PARSEDMARC_IMAP_HOST}

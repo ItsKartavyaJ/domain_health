@@ -2,7 +2,36 @@
   "permissions": {
     "allow": [
       "WebFetch(domain:pypi.org)",
-      "WebSearch"
+      "WebSearch",
+      "WebFetch(domain:smartlead.readme.io)",
+      "Bash(npx playwright *)",
+      "Bash(npm install *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(npm run *)",
+      "mcp__code-review-graph__build_or_update_graph_tool",
+      "mcp__code-review-graph__semantic_search_nodes_tool",
+      "mcp__code-review-graph__list_flows_tool",
+      "Bash(sed 's/.*,//')",
+      "Bash(gcloud compute ssh root@domain-health *)",
+      "Bash(gcloud compute instances list *)",
+      "Bash(git reset *)",
+      "Bash(docker restart *)",
+      "Bash(ssh kartavya_jain@domain-health *)",
+      "mcp__code-review-graph__list_graph_stats_tool",
+      "mcp__code-review-graph__get_architecture_overview_tool",
+      "mcp__code-review-graph__list_communities_tool",
+      "mcp__code-review-graph__list_repos_tool",
+      "WebFetch(domain:www.anthropic.com)",
+      "Bash(curl -s \"http://35.192.170.220:8787/api/debug/influx-cardinality\")",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\('Unique domains in InfluxDB:', d['unique_domain_count']\\); [print\\(' -', x\\) for x in sorted\\(d['unique_domains']\\)]\")",
+      "Bash(cat parsedmarc-stack/docker-compose.yml)",
+      "Bash(cat parsedmarc-stack/docker-compose.yaml)"
     ]
-  }
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "code-review-graph"
+  ]
 }
