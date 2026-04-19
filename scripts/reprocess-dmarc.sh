@@ -13,12 +13,14 @@ if [[ ! -f "$ENV_FILE" ]]; then
   exit 1
 fi
 
-# Load env vars so we can call InfluxDB API
-set -a; source "$ENV_FILE"; set +a
+# Extract vars from .env without sourcing (avoids bash syntax errors on special chars)
+_env_get() { grep -m1 "^${1}=" "$ENV_FILE" | cut -d= -f2- | tr -d '"' | tr -d "'"; }
 
-INFLUX_BUCKET="${INFLUXDB_DMARC_BUCKET:-dmarc}"
-INFLUX_ORG="${INFLUXDB_ORG:-pintel}"
-INFLUX_TOKEN="${INFLUXDB_TOKEN}"
+INFLUX_BUCKET="$(_env_get INFLUXDB_DMARC_BUCKET)"
+INFLUX_BUCKET="${INFLUX_BUCKET:-dmarc}"
+INFLUX_ORG="$(_env_get INFLUXDB_ORG)"
+INFLUX_ORG="${INFLUX_ORG:-pintel}"
+INFLUX_TOKEN="$(_env_get INFLUXDB_TOKEN)"
 INFLUX_URL="http://localhost:8086"
 
 echo "=== Step 1: Stop parsedmarc ==="
