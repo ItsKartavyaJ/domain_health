@@ -30,6 +30,9 @@ parsedmarc-stack/grafana/data/
 .DS_Store
 Thumbs.db
 
+# HAR captures (may contain tokens/cookies)
+*.har
+
 # Editor
 .vscode/*
 !.vscode/extensions.json
