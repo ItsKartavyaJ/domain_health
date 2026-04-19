@@ -27,7 +27,7 @@ echo ""
 echo "=== [2/4] Rebuild parsedmarc Docker stack ==="
 cd "$REPO/parsedmarc-stack"
 docker compose pull --quiet influxdb grafana caddy 2>/dev/null || true
-docker compose build --no-cache parsedmarc influx_writer
+docker compose build --no-cache parsedmarc
 docker compose up -d --remove-orphans
 docker compose ps
 echo "Docker stack up."
