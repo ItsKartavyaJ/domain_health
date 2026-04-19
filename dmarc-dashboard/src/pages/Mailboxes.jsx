@@ -77,8 +77,9 @@ export default function Mailboxes() {
   const [domError, setDoE]   = useState(null);
   const [provError, setPE]   = useState(null);
 
-  const [search, setSearch] = useState('');
-  const [sort, setSort]     = useState({ key: 'sent', dir: 'desc' });
+  const [search, setSearch]       = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [sort, setSort]           = useState({ key: 'sent', dir: 'desc' });
 
   const fetchId = useRef(0);
 
@@ -127,6 +128,7 @@ export default function Mailboxes() {
     : mailboxes;
 
   const filtered = merged
+    .filter((m) => statusFilter === 'all' || m.status === statusFilter)
     .filter((m) => (m.from_email || '').toLowerCase().includes(search.toLowerCase()))
     .sort((a, b) => {
       const av = a[sort.key] || 0;
@@ -163,15 +165,35 @@ export default function Mailboxes() {
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: 12, marginBottom: 28 }}>
           {[
-            { label: 'Mailboxes', value: merged.length, sub: `${activeCount} active · ${inactiveCount} idle · ${disconnectedCount} disconnected` },
+            { label: 'Mailboxes', value: merged.length, sub: null, statusPills: true },
             { label: 'Total Sent', value: totalSent.toLocaleString(), sub: 'emails sent' },
             { label: 'Total Replies', value: totalReplied.toLocaleString(), sub: totalSent > 0 ? `${Math.round((totalReplied / totalSent) * 100)}% reply rate` : '' },
             { label: 'Total Bounced', value: totalBounced.toLocaleString(), sub: totalSent > 0 ? `${Math.round((totalBounced / totalSent) * 100)}% bounce rate` : '', color: totalBounced > 0 ? 'var(--err-text)' : undefined },
-          ].map(({ label, value, sub, color }) => (
+          ].map(({ label, value, sub, color, statusPills }) => (
             <div key={label} style={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 12, padding: '16px 20px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
               <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>{label}</div>
               <div style={{ fontSize: 26, fontWeight: 700, color: color || 'var(--text)', letterSpacing: '-0.02em' }}>{value}</div>
               {sub && <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>{sub}</div>}
+              {statusPills && (
+                <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+                  {[
+                    { key: 'active', label: `${activeCount} active`, color: 'var(--ok-text)', bg: 'var(--ok-bg)' },
+                    { key: 'inactive', label: `${inactiveCount} idle`, color: 'var(--warn-text)', bg: 'var(--warn-bg)' },
+                    { key: 'disconnected', label: `${disconnectedCount} disconnected`, color: 'var(--err-text)', bg: 'var(--err-bg)' },
+                  ].map(({ key, label: pillLabel, color: pillColor, bg }) => (
+                    <button
+                      key={key}
+                      onClick={() => setStatusFilter(statusFilter === key ? 'all' : key)}
+                      style={{
+                        fontSize: 11, padding: '3px 8px', borderRadius: 20, border: 'none', cursor: 'pointer',
+                        background: statusFilter === key ? pillColor : bg,
+                        color: statusFilter === key ? 'white' : pillColor,
+                        fontWeight: 500, transition: 'all 0.15s',
+                      }}
+                    >{pillLabel}</button>
+                  ))}
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -233,12 +255,19 @@ export default function Mailboxes() {
             <div style={{ fontSize: 14, fontWeight: 600 }}>All Mailboxes</div>
             <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>Per-mailbox performance metrics</div>
           </div>
-          <input
-            placeholder="Search mailboxes..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            style={{ fontSize: 13, padding: '7px 12px', width: 220, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)' }}
-          />
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            {statusFilter !== 'all' && (
+              <button onClick={() => setStatusFilter('all')} style={{ fontSize: 12, padding: '5px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--muted)', cursor: 'pointer' }}>
+                Clear filter ×
+              </button>
+            )}
+            <input
+              placeholder="Search mailboxes..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              style={{ fontSize: 13, padding: '7px 12px', width: 220, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)' }}
+            />
+          </div>
         </div>
         {(healthLoading || acctLoading) ? <SectionLoader height={160} /> : (
           <div style={{ overflowX: 'auto' }}>

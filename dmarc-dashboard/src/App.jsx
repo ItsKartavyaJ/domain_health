@@ -5,6 +5,7 @@ import Replies from './pages/Replies';
 import Mailboxes from './pages/Mailboxes';
 import Campaigns from './pages/Campaigns';
 import Sequences from './pages/Sequences';
+import Domains from './pages/Domains';
 import Login from './pages/Login';
 
 const tabs = [
@@ -13,6 +14,7 @@ const tabs = [
   { key: 'mailboxes', label: 'Mailboxes' },
   { key: 'campaigns', label: 'Campaigns' },
   { key: 'sequences', label: 'Sequences' },
+  { key: 'domains', label: 'Domains' },
 ];
 
 const tabComponents = {
@@ -21,6 +23,7 @@ const tabComponents = {
   mailboxes: Mailboxes,
   campaigns: Campaigns,
   sequences: Sequences,
+  domains: Domains,
 };
 
 export default function App() {
