@@ -6,8 +6,23 @@ const SL_KEY = () => process.env.SMARTLEAD_API_KEY || '';
 const FETCH_TIMEOUT_MS = 15_000;
 const MAX_PAGES = 50;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const CACHE_TTL_MS = 90 * 60 * 1000; // 90 minutes
 
-async function slFetch(path, opts = {}) {
+const _cache = new Map();    // key → { data, exp }
+const _inflight = new Map(); // key → Promise
+
+function srvCached(key, fetcher) {
+  const hit = _cache.get(key);
+  if (hit && Date.now() < hit.exp) return Promise.resolve(hit.data);
+  if (_inflight.has(key)) return _inflight.get(key);
+  const p = fetcher()
+    .then((data) => { _cache.set(key, { data, exp: Date.now() + CACHE_TTL_MS }); _inflight.delete(key); return data; })
+    .catch((err) => { _inflight.delete(key); throw err; });
+  _inflight.set(key, p);
+  return p;
+}
+
+async function _slFetch(path, opts = {}) {
   const sep = path.includes('?') ? '&' : '?';
   const url = `${SL_BASE}${path}${sep}api_key=${SL_KEY()}`;
   const controller = new AbortController();
@@ -27,6 +42,14 @@ async function slFetch(path, opts = {}) {
   } finally {
     clearTimeout(timer);
   }
+}
+
+// GET requests are cached; POST/mutations bypass the cache
+function slFetch(path, opts = {}) {
+  if (!opts.method || opts.method === 'GET') {
+    return srvCached(path, () => _slFetch(path, opts));
+  }
+  return _slFetch(path, opts);
 }
 
 function dateParams(req, res) {
