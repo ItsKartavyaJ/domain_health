@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import DateFilter from '../components/DateFilter';
 import Badge from '../components/Badge';
-import { getMailboxHealth, getDomainHealth, getProviderStats, getEmailAccounts } from '../api/smartlead';
+import { getMailboxHealth, getDomainHealth, getEmailAccounts } from '../api/smartlead';
 
 const TODAY = new Date().toISOString().slice(0, 10);
 const THIRTY_DAYS_AGO = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
@@ -65,17 +65,14 @@ export default function Mailboxes() {
 
   const [mailboxes, setMailboxes]   = useState([]);
   const [domains, setDomains]       = useState([]);
-  const [providers, setProviders]   = useState([]);
   const [accounts, setAccounts]     = useState([]);
 
   const [healthLoading, setHL] = useState(true);
   const [domLoading, setDoL]   = useState(true);
-  const [provLoading, setPL]   = useState(true);
   const [acctLoading, setAL]   = useState(true);
 
   const [healthError, setHE] = useState(null);
   const [domError, setDoE]   = useState(null);
-  const [provError, setPE]   = useState(null);
 
   const [search, setSearch]       = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -85,8 +82,8 @@ export default function Mailboxes() {
 
   function fetchDateBound(s, e) {
     const id = ++fetchId.current;
-    setHL(true); setDoL(true); setPL(true);
-    setHE(null); setDoE(null); setPE(null);
+    setHL(true); setDoL(true);
+    setHE(null); setDoE(null);
 
     getMailboxHealth(s, e)
       .then((d) => { if (fetchId.current === id) setMailboxes(Array.isArray(d) ? d : []); })
@@ -97,11 +94,6 @@ export default function Mailboxes() {
       .then((d) => { if (fetchId.current === id) setDomains(Array.isArray(d) ? d : []); })
       .catch((err) => { if (fetchId.current === id) setDoE(err.message); })
       .finally(() => { if (fetchId.current === id) setDoL(false); });
-
-    getProviderStats(s, e)
-      .then((d) => { if (fetchId.current === id) setProviders(Array.isArray(d) ? d : []); })
-      .catch((err) => { if (fetchId.current === id) setPE(err.message); })
-      .finally(() => { if (fetchId.current === id) setPL(false); });
   }
 
   useEffect(() => {
@@ -199,31 +191,8 @@ export default function Mailboxes() {
         </div>
       )}
 
-      {/* Provider + Domain breakdown — independent */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 28 }}>
-        {/* Provider chart */}
-        <div style={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 12, padding: 20, boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
-          <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 16 }}>By Email Provider</div>
-          {provLoading ? <SectionLoader height={220} /> : provError ? (
-            <div style={{ height: 220, display: 'grid', placeItems: 'center', color: 'var(--err-text)', fontSize: 13 }}>{provError}</div>
-          ) : providers.length > 0 ? (
-            <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={providers.map((p) => ({ name: p.email_provider || 'Unknown', sent: p.sent || 0, replied: p.replied || 0, bounced: p.bounced || 0 }))} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                <XAxis dataKey="name" tick={{ fontSize: 11, fill: 'var(--muted)' }} tickLine={false} axisLine={false} />
-                <YAxis tick={{ fontSize: 10, fill: 'var(--muted)' }} tickLine={false} axisLine={false} width={40} />
-                <Tooltip contentStyle={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12, padding: '8px 12px' }} cursor={{ fill: 'var(--surface)', opacity: 0.5 }} />
-                <Bar dataKey="sent" fill="#3B82F6" name="Sent" radius={[4, 4, 0, 0]} barSize={20} />
-                <Bar dataKey="replied" fill="#22C55E" name="Replied" radius={[4, 4, 0, 0]} barSize={20} />
-                <Bar dataKey="bounced" fill="#EF4444" name="Bounced" radius={[4, 4, 0, 0]} barSize={20} />
-              </BarChart>
-            </ResponsiveContainer>
-          ) : (
-            <div style={{ height: 220, display: 'grid', placeItems: 'center', color: 'var(--muted)', fontSize: 13 }}>No provider data</div>
-          )}
-        </div>
-
-        {/* Domain breakdown */}
+      {/* Domain breakdown */}
+      <div style={{ marginBottom: 28 }}>
         <div style={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
           <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)' }}>
             <div style={{ fontSize: 14, fontWeight: 600 }}>By Sending Domain</div>
