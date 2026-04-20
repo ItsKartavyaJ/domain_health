@@ -1,4 +1,5 @@
 import { getIdToken } from './auth';
+import { cached } from './cache';
 
 async function authFetch(url) {
   const token = await getIdToken();
@@ -9,12 +10,10 @@ async function authFetch(url) {
   return res.json();
 }
 
-export async function getDomainStats() {
-  const json = await authFetch('/api/metrics/domain-stats');
-  return json.domains || [];
+export function getDomainStats() {
+  return cached('/api/metrics/domain-stats', () => authFetch('/api/metrics/domain-stats').then((j) => j.domains || []));
 }
 
-export async function getAlerts() {
-  const json = await authFetch('/api/metrics/alerts');
-  return json.alerts || [];
+export function getAlerts() {
+  return cached('/api/metrics/alerts', () => authFetch('/api/metrics/alerts').then((j) => j.alerts || []));
 }

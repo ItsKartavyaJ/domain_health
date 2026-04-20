@@ -1,4 +1,5 @@
 import { getIdToken } from './auth';
+import { cached } from './cache';
 
 async function authFetch(url, opts = {}) {
   const token = await getIdToken();
@@ -21,62 +22,60 @@ function qs(params) {
   return p.toString();
 }
 
-export async function getReplyCategories(startDate, endDate) {
-  const json = await authFetch(`/api/smartlead/reply-categories?${qs({ start_date: startDate, end_date: endDate })}`);
-  return json.data || [];
+export function getReplyCategories(startDate, endDate) {
+  const url = `/api/smartlead/reply-categories?${qs({ start_date: startDate, end_date: endDate })}`;
+  return cached(url, () => authFetch(url).then((j) => j.data || []));
 }
 
-export async function getDailyStats(startDate, endDate) {
-  const json = await authFetch(`/api/smartlead/daily-stats?${qs({ start_date: startDate, end_date: endDate })}`);
-  return json.data || [];
+export function getDailyStats(startDate, endDate) {
+  const url = `/api/smartlead/daily-stats?${qs({ start_date: startDate, end_date: endDate })}`;
+  return cached(url, () => authFetch(url).then((j) => j.data || []));
 }
 
-export async function getDailyPositiveReplies(startDate, endDate) {
-  const json = await authFetch(`/api/smartlead/daily-positive-replies?${qs({ start_date: startDate, end_date: endDate })}`);
-  return json.data || [];
+export function getDailyPositiveReplies(startDate, endDate) {
+  const url = `/api/smartlead/daily-positive-replies?${qs({ start_date: startDate, end_date: endDate })}`;
+  return cached(url, () => authFetch(url).then((j) => j.data || []));
 }
 
-export async function getResponseStats(startDate, endDate) {
-  const json = await authFetch(`/api/smartlead/response-stats?${qs({ start_date: startDate, end_date: endDate })}`);
-  return json.data || [];
+export function getResponseStats(startDate, endDate) {
+  const url = `/api/smartlead/response-stats?${qs({ start_date: startDate, end_date: endDate })}`;
+  return cached(url, () => authFetch(url).then((j) => j.data || []));
 }
 
-export async function getMailboxHealth(startDate, endDate, limit = 100, offset = 0) {
-  const json = await authFetch(`/api/smartlead/mailbox-health?${qs({ start_date: startDate, end_date: endDate, limit, offset })}`);
-  return json.data || [];
+export function getMailboxHealth(startDate, endDate, limit = 100, offset = 0) {
+  const url = `/api/smartlead/mailbox-health?${qs({ start_date: startDate, end_date: endDate, limit, offset })}`;
+  return cached(url, () => authFetch(url).then((j) => j.data || []));
 }
 
-export async function getDomainHealth(startDate, endDate) {
-  const json = await authFetch(`/api/smartlead/domain-health?${qs({ start_date: startDate, end_date: endDate })}`);
-  return json.data || [];
+export function getDomainHealth(startDate, endDate) {
+  const url = `/api/smartlead/domain-health?${qs({ start_date: startDate, end_date: endDate })}`;
+  return cached(url, () => authFetch(url).then((j) => j.data || []));
 }
 
-export async function getProviderStats(startDate, endDate) {
-  const json = await authFetch(`/api/smartlead/provider-stats?${qs({ start_date: startDate, end_date: endDate })}`);
-  return json.data || [];
+export function getProviderStats(startDate, endDate) {
+  const url = `/api/smartlead/provider-stats?${qs({ start_date: startDate, end_date: endDate })}`;
+  return cached(url, () => authFetch(url).then((j) => j.data || []));
 }
 
-export async function getMailboxOverall() {
-  const json = await authFetch('/api/smartlead/mailbox-overall');
-  return json.data || {};
+export function getMailboxOverall() {
+  return cached('/api/smartlead/mailbox-overall', () => authFetch('/api/smartlead/mailbox-overall').then((j) => j.data || {}));
 }
 
-export async function getEmailAccounts(limit = 100, offset = 0) {
-  const json = await authFetch(`/api/smartlead/email-accounts?${qs({ limit, offset })}`);
-  return json.data || [];
+export function getEmailAccounts(limit = 100, offset = 0) {
+  const url = `/api/smartlead/email-accounts?${qs({ limit, offset })}`;
+  return cached(url, () => authFetch(url).then((j) => j.data || []));
 }
 
-export async function getCampaignStats(startDate, endDate, limit = 50, offset = 0) {
-  const json = await authFetch(`/api/smartlead/campaign-stats?${qs({ start_date: startDate, end_date: endDate, limit, offset })}`);
-  return json.data || [];
+export function getCampaignStats(startDate, endDate, limit = 50, offset = 0) {
+  const url = `/api/smartlead/campaign-stats?${qs({ start_date: startDate, end_date: endDate, limit, offset })}`;
+  return cached(url, () => authFetch(url).then((j) => j.data || []));
 }
 
-export async function getCampaignList() {
-  const json = await authFetch('/api/smartlead/campaigns');
-  return json.data || [];
+export function getCampaignList() {
+  return cached('/api/smartlead/campaigns', () => authFetch('/api/smartlead/campaigns').then((j) => j.data || []));
 }
 
-export async function getSequenceAnalytics(campaignId, startDate, endDate) {
-  const json = await authFetch(`/api/smartlead/sequence-analytics/${campaignId}?${qs({ start_date: startDate, end_date: endDate })}`);
-  return json.data || [];
+export function getSequenceAnalytics(campaignId, startDate, endDate) {
+  const url = `/api/smartlead/sequence-analytics/${campaignId}?${qs({ start_date: startDate, end_date: endDate })}`;
+  return cached(url, () => authFetch(url).then((j) => j.data || []));
 }
