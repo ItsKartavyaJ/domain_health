@@ -27,7 +27,13 @@
       "Bash(curl -s \"http://35.192.170.220:8787/api/debug/influx-cardinality\")",
       "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\('Unique domains in InfluxDB:', d['unique_domain_count']\\); [print\\(' -', x\\) for x in sorted\\(d['unique_domains']\\)]\")",
       "Bash(cat parsedmarc-stack/docker-compose.yml)",
-      "Bash(cat parsedmarc-stack/docker-compose.yaml)"
+      "Bash(cat parsedmarc-stack/docker-compose.yaml)",
+      "Read(//mnt/**)",
+      "Bash(ls /d)",
+      "Bash(ls /drives)",
+      "Bash(powershell.exe -Command \"cd D:\\\\pintel\\\\domain_health\\\\dmarc-dashboard; npm run build 2>&1\")",
+      "Bash(powershell.exe -Command \"Set-Location 'D:\\\\pintel\\\\domain_health\\\\dmarc-dashboard'; npm run build 2>&1\")",
+      "Bash(powershell.exe *)"
     ]
   },
   "enableAllProjectMcpServers": true,

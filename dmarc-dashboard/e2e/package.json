@@ -1,0 +1,16 @@
+{
+  "name": "domain-health-e2e",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "test": "playwright test --config=playwright.config.js",
+    "test:login": "playwright test --config=playwright.config.js tests/01-login-navigation.spec.js",
+    "test:campaigns": "playwright test --config=playwright.config.js tests/02-campaigns.spec.js",
+    "test:mailboxes": "playwright test --config=playwright.config.js tests/03-mailboxes.spec.js",
+    "test:ux": "playwright test --config=playwright.config.js tests/04-general-ux.spec.js",
+    "report": "playwright show-report ../e2e-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0"
+  }
+}
