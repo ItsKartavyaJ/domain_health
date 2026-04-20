@@ -11,8 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Install parsedmarc with all optional extras
 # influxdb2 extra needed for InfluxDB v2 output
 RUN pip install --no-cache-dir \
-    "parsedmarc[influxdb2]<8.0" \
-    "influxdb-client>=1.36.0" \
+    "parsedmarc<9.0" \
     google-auth \
     google-auth-oauthlib \
     google-api-python-client

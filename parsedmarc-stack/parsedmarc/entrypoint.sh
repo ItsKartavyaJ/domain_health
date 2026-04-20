@@ -4,7 +4,7 @@ cat > /tmp/parsedmarc.ini << EOF
 [general]
 save_aggregate = True
 save_forensic = True
-# output = /data
+output = /data
 
 [imap]
 host = ${PARSEDMARC_IMAP_HOST}
@@ -19,12 +19,6 @@ delete = False
 batch_size = ${PARSEDMARC_MAILBOX_BATCH_SIZE:-10}
 reports_folder = ${PARSEDMARC_MAILBOX_REPORTS_FOLDER:-INBOX}
 archive_folder = ${PARSEDMARC_MAILBOX_ARCHIVE_FOLDER:-Archive}
-
-[influxdb2]
-url = http://${PARSEDMARC_INFLUXDB_HOST}:${PARSEDMARC_INFLUXDB_PORT}
-org = ${PARSEDMARC_INFLUXDB_ORG}
-bucket = ${PARSEDMARC_INFLUXDB_BUCKET}
-token = ${PARSEDMARC_INFLUXDB_TOKEN}
 EOF
 
 exec parsedmarc -c /tmp/parsedmarc.ini --debug
