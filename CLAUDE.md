@@ -59,9 +59,9 @@ npm run start:api     # Prod: serve API + built frontend
 ## Architecture
 
 ### Data Flow
-1. `parsedmarc` daemon watches `DMARC@pintel.ai` Gmail inbox → parses DMARC XML reports → writes `dmarc_aggregate` measurement to InfluxDB `dmarc` bucket
+1. `parsedmarc` daemon watches `DMARC@pintel.ai` Gmail inbox → parses DMARC XML reports → writes `aggregate.json` to shared Docker volume (`parsedmarc_data`) → `influx_writer` service reads `/data/aggregate.json` every 30s and writes `dmarc_aggregate` measurement to InfluxDB `dmarc` bucket
 2. `deliverability_monitor` scheduler runs 10 modules on 6–24h intervals → writes 8 measurements to InfluxDB `deliverability` bucket
-3. `dmarc-dashboard` Express server queries InfluxDB via Flux → serves React SPA on port 8787
+3. `dmarc-dashboard` Express server (with 90-minute server-side cache) queries InfluxDB via Flux + Smartlead API → serves React SPA on port 8787 with client-side 90-minute cache
 
 ### deliverability_monitor Scheduler (`scheduler.py`)
 - On startup: calls `domain_discovery.refresh()` to pull domains/IPs from Smartlead API
@@ -84,8 +84,18 @@ npm run start:api     # Prod: serve API + built frontend
 ### dmarc-dashboard Auth Flow
 - POST `/api/auth/login` validates against `API_AUTH_USER`/`API_AUTH_PASSWORD` env vars
 - Issues JWT signed with `API_JWT_SECRET`, stored in httpOnly `dmarc_auth` cookie (12h)
-- All `/api/metrics/*` routes protected by JWT middleware
+- All `/api/metrics/*` and `/api/smartlead/*` routes protected by JWT middleware
 - InfluxDB token never exposed to the browser
+
+### dmarc-dashboard Pages
+- **Mailboxes** — Real-time mailbox status with clickable filter pills (active/idle/disconnected); "By Sending Domain" card full width
+- **Domains** — Merges Smartlead domain health data with InfluxDB DMARC stats in an 11-column searchable/sortable table; includes SPF validation status, DKIM checks, DMARC alignment, and historical charts (DMARC pass rate, domain reputation trend)
+- **Campaigns** — Campaign metrics from Smartlead; deliverability trends
+
+### dmarc-dashboard Caching Architecture
+- **Client-side cache** (`src/api/cache.js`) — 90-minute TTL in-memory cache with inflight request deduplication; used by all `src/api/smartlead.js` and `src/api/influx.js` functions
+- **Server-side cache** (`server/smartlead.js`) — 90-minute in-process cache on Express for all Smartlead GET endpoints (prevents rate-limiting 500 errors on double-clicks or page revisits)
+- Cache hit detection via headers and metrics API to minimize InfluxDB/Smartlead API calls
 
 ### Alerting
 Modules call `alerter.post_alert(event, subject, detail)` → POST JSON to `ALERT_WEBHOOK_URL` (n8n webhook). Alert events: `blacklist_detected`, `dns_validation_failed`, `high_spam_rate`, `warmup_high_spam`, `mailbox_reconnect_required`, `high_campaign_bounce_rate`, `postmaster_poor_reputation`, `daily_digest`.
@@ -111,5 +121,7 @@ All secrets live in a single `.env` at the project root. Key variables:
 - `deliverability_monitor` accesses InfluxDB inside Docker via the bridge network (`localhost:8086` from the host systemd service)
 - `warmup_stats` has a 0.3s inter-request delay across 164 mailboxes (~50s per run); tunable via env var
 - Postmaster Tools module is optional — silently skips if credentials file not found
+- `parsedmarc_data` Docker volume (`/data` inside container) is shared between `parsedmarc` and `influx_writer` services; `aggregate.json` is written by parsedmarc and read by influx_writer every 30s
+- E2E tests in `dmarc-dashboard/e2e/` cover login, campaigns, mailboxes, and dashboard UX via Playwright
 
 <!-- claude --resume 217c241f-f162-4490-aad3-656c35cccf26   -->
