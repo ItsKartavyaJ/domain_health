@@ -36,6 +36,8 @@ log = logging.getLogger(__name__)
 PUBLIC_NS = ["8.8.8.8", "1.1.1.1"]
 MAX_DNS_LOOKUPS = 10   # RFC 7208 limit
 
+_spf_txt_cache: Dict[str, Optional[str]] = {}
+
 
 def _resolver() -> dns.resolver.Resolver:
     r = dns.resolver.Resolver()
@@ -64,10 +66,13 @@ class SPFWalker:
         self.lookup_count = 0
 
     def _txt_record(self, domain: str) -> Optional[str]:
-        """Fetch SPF TXT record for domain."""
+        """Fetch SPF TXT record for domain. Cache hits don't count against the lookup limit."""
+        if domain in _spf_txt_cache:
+            return _spf_txt_cache[domain]
         if self.lookup_count >= MAX_DNS_LOOKUPS:
             return None
         self.lookup_count += 1
+        result: Optional[str] = None
         try:
             answers = self.res.resolve(domain, "TXT")
             for rdata in answers:
@@ -76,10 +81,12 @@ class SPFWalker:
                     for s in rdata.strings
                 )
                 if txt.startswith("v=spf1"):
-                    return txt
+                    result = txt
+                    break
         except Exception:
             pass
-        return None
+        _spf_txt_cache[domain] = result
+        return result
 
     def _resolve_a(self, domain: str) -> List[str]:
         """Resolve A records for a domain."""
@@ -214,7 +221,6 @@ def run() -> dict:
                     "dns_lookups": 0,
                     "error": str(e)[:200],
                 }
-                results.append(data)
 
             results.append(data)
             points.append(

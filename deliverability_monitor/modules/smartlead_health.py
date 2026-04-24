@@ -21,6 +21,7 @@ import requests
 from config.settings import smartlead as sl_cfg, alerts as alert_cfg
 from modules.influx_writer import writer
 from modules.alerter import send_alert
+from modules.utils import safe_float as _safe_float, safe_int as _safe_int
 
 log = logging.getLogger(__name__)
 
@@ -83,20 +84,6 @@ class SmartleadClient:
         if isinstance(data, list):
             return data
         return data.get("data", [])
-
-
-def _safe_float(val: Any, default: float = 0.0) -> float:
-    try:
-        return float(val or default)
-    except (TypeError, ValueError):
-        return default
-
-
-def _safe_int(val: Any, default: int = 0) -> int:
-    try:
-        return int(val or default)
-    except (TypeError, ValueError):
-        return default
 
 
 def parse_domain_row(row: Dict) -> Dict:

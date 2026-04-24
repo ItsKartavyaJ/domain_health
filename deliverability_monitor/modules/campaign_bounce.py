@@ -20,41 +20,15 @@ import time
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
-import requests
 from influxdb_client import Point, WritePrecision
 
 from config.settings import smartlead as sl_cfg, alerts as alert_cfg
 from modules.influx_writer import writer
 from modules.alerter import send_alert
+from modules.smartlead_client import sl_get
+from modules.utils import safe_float as _safe_float, safe_int as _safe_int
 
 log = logging.getLogger(__name__)
-
-
-def _safe_float(val: Any, default: float = 0.0) -> float:
-    try:
-        return float(val if val is not None else default)
-    except (TypeError, ValueError):
-        return default
-
-
-def _safe_int(val: Any, default: int = 0) -> int:
-    try:
-        return int(val if val is not None else default)
-    except (TypeError, ValueError):
-        return default
-
-
-def _sl_get(path: str, params: Dict = None) -> Optional[Any]:
-    base = {"api_key": sl_cfg.api_key}
-    if params:
-        base.update(params)
-    try:
-        r = requests.get(f"{sl_cfg.base_url}{path}", params=base, timeout=30)
-        r.raise_for_status()
-        return r.json()
-    except Exception as e:
-        log.warning("Smartlead request failed %s: %s", path, e)
-        return None
 
 
 def fetch_active_campaigns() -> List[Dict]:
@@ -62,7 +36,7 @@ def fetch_active_campaigns() -> List[Dict]:
     GET /campaigns/ — returns all campaigns.
     Filter to those with status ACTIVE or IN_PROGRESS.
     """
-    data = _sl_get("/campaigns/")
+    data = sl_get("/campaigns/")
     if data is None:
         return []
     campaigns = data if isinstance(data, list) else data.get("data", data.get("list", []))
@@ -72,7 +46,7 @@ def fetch_active_campaigns() -> List[Dict]:
 
 def fetch_campaign_stats(campaign_id: int) -> Optional[Dict]:
     """GET /campaigns/{id}/statistics"""
-    return _sl_get(f"/campaigns/{campaign_id}/statistics")
+    return sl_get(f"/campaigns/{campaign_id}/statistics")
 
 
 def parse_campaign(campaign: Dict, stats: Dict) -> Dict:

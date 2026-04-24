@@ -25,27 +25,27 @@ import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from config.settings import influx as influx_cfg, alerts as alert_cfg
+from config.settings import influx as influx_cfg, alerts as alert_cfg, smartlead as sl_cfg
 from modules.alerter import send_alert
 
 log = logging.getLogger(__name__)
+
+_shared_client = None
 
 
 def _query(flux: str) -> List[Dict]:
     """Run a Flux query against InfluxDB and return records as list of dicts."""
     try:
-        from influxdb_client import InfluxDBClient
-        with InfluxDBClient(
-            url=influx_cfg.url,
-            token=influx_cfg.token,
-            org=influx_cfg.org,
-        ) as client:
-            tables = client.query_api().query(flux, org=influx_cfg.org)
-            records = []
-            for table in tables:
-                for record in table.records:
-                    records.append(record.values)
-            return records
+        client = _shared_client
+        if client is None:
+            from influxdb_client import InfluxDBClient
+            client = InfluxDBClient(url=influx_cfg.url, token=influx_cfg.token, org=influx_cfg.org)
+        tables = client.query_api().query(flux, org=influx_cfg.org)
+        records = []
+        for table in tables:
+            for record in table.records:
+                records.append(record.values)
+        return records
     except Exception as e:
         log.warning("Flux query failed: %s", e)
         return []
@@ -165,7 +165,7 @@ def _campaign_bounce_summary() -> Dict:
     if not records:
         return {"campaigns_tracked": 0, "high_bounce_count": 0}
 
-    high = [r for r in records if float(r.get("_value", 0)) >= 3.0]
+    high = [r for r in records if float(r.get("_value", 0)) >= sl_cfg.campaign_bounce_threshold]
     avg = sum(float(r.get("_value", 0)) for r in records) / len(records)
 
     return {
@@ -281,16 +281,23 @@ def run() -> dict:
     log.info("=== Daily Digest assembling ===")
     start = time.time()
 
-    sections = {
-        "rbl":         _rbl_summary(),
-        "dns":         _dns_summary(),
-        "smartlead":   _smartlead_summary(),
-        "warmup":      _warmup_summary(),
-        "reconnect":   _reconnect_summary(),
-        "campaign":    _campaign_bounce_summary(),
-        "postmaster":  _postmaster_summary(),
-        "spf":         _spf_summary(),
-    }
+    global _shared_client
+    from influxdb_client import InfluxDBClient
+    with InfluxDBClient(url=influx_cfg.url, token=influx_cfg.token, org=influx_cfg.org) as client:
+        _shared_client = client
+        try:
+            sections = {
+                "rbl":         _rbl_summary(),
+                "dns":         _dns_summary(),
+                "smartlead":   _smartlead_summary(),
+                "warmup":      _warmup_summary(),
+                "reconnect":   _reconnect_summary(),
+                "campaign":    _campaign_bounce_summary(),
+                "postmaster":  _postmaster_summary(),
+                "spf":         _spf_summary(),
+            }
+        finally:
+            _shared_client = None
 
     overall_score = _overall_health_score(sections)
 

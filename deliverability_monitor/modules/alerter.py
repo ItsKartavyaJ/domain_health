@@ -5,9 +5,12 @@ routes to Slack / email / wherever you've wired it.
 Fails silently (logs only) so a dead webhook never crashes the monitor.
 """
 
+import json
 import logging
+import os
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict
 
 import requests
@@ -18,8 +21,28 @@ log = logging.getLogger(__name__)
 
 # Deduplication: track last sent time per (event, domain) key.
 # Suppresses repeat alerts within DEDUP_WINDOW_SECONDS (default 4 hours).
-_last_sent: Dict[str, float] = {}
 DEDUP_WINDOW_SECONDS = 4 * 3600
+_DEDUP_FILE = Path(os.getenv("ALERT_DEDUP_FILE", "/var/run/deliverability_monitor/alert_dedup.json"))
+
+
+def _load_dedup() -> Dict[str, float]:
+    try:
+        if _DEDUP_FILE.exists():
+            return json.loads(_DEDUP_FILE.read_text())
+    except Exception as e:
+        log.warning("Could not load alert dedup state from %s: %s", _DEDUP_FILE, e)
+    return {}
+
+
+def _save_dedup(state: Dict[str, float]) -> None:
+    try:
+        _DEDUP_FILE.parent.mkdir(parents=True, exist_ok=True)
+        _DEDUP_FILE.write_text(json.dumps(state))
+    except Exception as e:
+        log.warning("Could not persist alert dedup state to %s: %s", _DEDUP_FILE, e)
+
+
+_last_sent: Dict[str, float] = _load_dedup()
 
 
 def send_alert(subject: str, body: Dict[str, Any]) -> bool:
@@ -40,6 +63,7 @@ def send_alert(subject: str, body: Dict[str, Any]) -> bool:
         log.debug("Alert suppressed (dedup, %.0fh window): %s", DEDUP_WINDOW_SECONDS / 3600, subject)
         return False
     _last_sent[dedup_key] = now
+    _save_dedup(_last_sent)
 
     payload = {
         "subject": subject,

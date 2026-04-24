@@ -19,6 +19,7 @@ Called by:       scheduler.py every WARMUP_INTERVAL_HOURS
 
 import logging
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -29,22 +30,11 @@ from config.settings import smartlead as sl_cfg, alerts as alert_cfg
 from modules.domain_discovery import get_mailboxes
 from modules.influx_writer import writer
 from modules.alerter import send_alert
+from modules.utils import safe_float as _safe_float, safe_int as _safe_int
 
 log = logging.getLogger(__name__)
 
-
-def _safe_float(val: Any, default: float = 0.0) -> float:
-    try:
-        return float(val or default)
-    except (TypeError, ValueError):
-        return default
-
-
-def _safe_int(val: Any, default: int = 0) -> int:
-    try:
-        return int(val or default)
-    except (TypeError, ValueError):
-        return default
+MAX_WORKERS = 10
 
 
 def fetch_warmup_stats(account_id: int) -> Optional[Dict]:
@@ -136,8 +126,7 @@ def run() -> dict:
         log.warning("No mailboxes discovered — skipping warmup stats")
         return {"skipped": True, "reason": "no_mailboxes"}
 
-    log.info("Fetching warmup stats for %d mailboxes (delay=%.1fs between calls)",
-             len(mailboxes), sl_cfg.warmup_batch_delay_secs)
+    log.info("Fetching warmup stats for %d mailboxes (workers=%d)", len(mailboxes), MAX_WORKERS)
 
     points = []
     results = []
@@ -145,39 +134,39 @@ def run() -> dict:
     no_warmup = 0
     errors = 0
 
-    for mb in mailboxes:
+    def _fetch_one(mb: Dict):
         account_id = mb.get("id")
         email = mb.get("from_email") or mb.get("email") or f"unknown_{account_id}"
-
         if not account_id:
-            continue
-
+            return None
         raw = fetch_warmup_stats(int(account_id))
+        return (account_id, email, raw)
 
-        if raw is None:
-            no_warmup += 1
-            log.debug("%s — no warmup data (warmup not enabled or no sends)", email)
-        else:
-            try:
-                data = parse_warmup(int(account_id), email, raw)
-                results.append(data)
-                points.append(build_point(data))
-
-                log.info(
-                    "%s — inbox:%.1f%% spam:%.1f%% score:%.0f (sent:%d)",
-                    email, data["inbox_pct"], data["spam_pct"],
-                    data["health_score"], data["total_sent"],
-                )
-
-                if data["spam_pct"] >= alert_cfg.spam_pct_threshold:
-                    critical.append(data)
-
-            except Exception as e:
-                log.error("Failed to parse warmup stats for %s: %s", email, e)
-                errors += 1
-
-        # Rate-limit: small delay between API calls
-        time.sleep(sl_cfg.warmup_batch_delay_secs)
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
+        futures = {pool.submit(_fetch_one, mb): mb for mb in mailboxes}
+        for future in as_completed(futures):
+            result = future.result()
+            if result is None:
+                continue
+            account_id, email, raw = result
+            if raw is None:
+                no_warmup += 1
+                log.debug("%s — no warmup data (warmup not enabled or no sends)", email)
+            else:
+                try:
+                    data = parse_warmup(int(account_id), email, raw)
+                    results.append(data)
+                    points.append(build_point(data))
+                    log.info(
+                        "%s — inbox:%.1f%% spam:%.1f%% score:%.0f (sent:%d)",
+                        email, data["inbox_pct"], data["spam_pct"],
+                        data["health_score"], data["total_sent"],
+                    )
+                    if data["spam_pct"] >= alert_cfg.spam_pct_threshold:
+                        critical.append(data)
+                except Exception as e:
+                    log.error("Failed to parse warmup stats for %s: %s", email, e)
+                    errors += 1
 
     if points:
         writer.write_points(points)

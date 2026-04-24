@@ -21,10 +21,10 @@ import time
 from typing import Dict, List, Optional, Set, Tuple
 from datetime import date, timedelta
 
-import requests
 import dns.resolver
 
 from config.settings import smartlead as sl_cfg, SENDING_DOMAINS, SENDING_IPS
+from modules.smartlead_client import sl_get
 
 log = logging.getLogger(__name__)
 
@@ -40,24 +40,6 @@ _cache: Dict = {
 PUBLIC_NS = ["8.8.8.8", "1.1.1.1"]
 
 
-def _sl_get(path: str, params: dict = None) -> Optional[any]:
-    """Raw Smartlead GET — no date params (used for account-level endpoints)."""
-    base_params = {"api_key": sl_cfg.api_key}
-    if params:
-        base_params.update(params)
-    try:
-        r = requests.get(
-            f"{sl_cfg.base_url}{path}",
-            params=base_params,
-            timeout=30,
-        )
-        r.raise_for_status()
-        return r.json()
-    except Exception as e:
-        log.warning("Smartlead discovery request failed %s: %s", path, e)
-        return None
-
-
 def _fetch_all_mailboxes() -> List[Dict]:
     """Fetch every email account from Smartlead, handling pagination."""
     all_mailboxes: List[Dict] = []
@@ -65,7 +47,7 @@ def _fetch_all_mailboxes() -> List[Dict]:
     limit = 100
 
     while True:
-        data = _sl_get("/email-accounts/", {"limit": limit, "offset": offset})
+        data = sl_get("/email-accounts/", {"limit": limit, "offset": offset})
         if data is None:
             break
 
@@ -88,7 +70,7 @@ def _fetch_active_domains() -> List[str]:
     """Fetch domains that have sent mail recently (domain-wise analytics)."""
     start = (date.today() - timedelta(days=sl_cfg.lookback_days)).isoformat()
     end = date.today().isoformat()
-    data = _sl_get(
+    data = sl_get(
         "/analytics/mailbox/domain-wise-health-metrics",
         {"start_date": start, "end_date": end},
     )

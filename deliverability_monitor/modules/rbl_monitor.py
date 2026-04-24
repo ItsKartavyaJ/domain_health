@@ -37,9 +37,8 @@ def _build_checkers():
     return domain_checker, ip_checker
 
 
-def check_domains(domains: List[str]) -> List[dict]:
+def check_domains(domain_checker: DNSBLDomainChecker, domains: List[str]) -> List[dict]:
     """Async check all domains against DNSBL. Returns list of result dicts."""
-    domain_checker, _ = _build_checkers()
     results = []
 
     log.info("Checking %d domains against %d DNSBL providers...", len(domains), len(BASE_DOMAIN_PROVIDERS))
@@ -78,9 +77,8 @@ def check_domains(domains: List[str]) -> List[dict]:
     return results
 
 
-def check_ips(ips: List[str]) -> List[dict]:
+def check_ips(ip_checker: DNSBLIpChecker, ips: List[str]) -> List[dict]:
     """Async check all sending IPs against DNSBL."""
-    _, ip_checker = _build_checkers()
     results = []
 
     if not ips:
@@ -165,8 +163,9 @@ def run() -> dict:
     log.info("=== RBL Monitor run started ===")
     start = time.time()
 
-    domain_results = check_domains(get_domains())
-    ip_results = check_ips(get_ips())
+    domain_checker, ip_checker = _build_checkers()
+    domain_results = check_domains(domain_checker, get_domains())
+    ip_results = check_ips(ip_checker, get_ips())
 
     write_results(domain_results, ip_results)
 

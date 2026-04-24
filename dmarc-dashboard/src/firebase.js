@@ -12,5 +12,6 @@ export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 
-// Restrict to @pintel.ai accounts only
+// hd narrows the Google account picker UI — it does NOT enforce domain access.
+// Server-side enforcement is in server/index.js (Firebase Admin verifyIdToken + email check).
 googleProvider.setCustomParameters({ hd: 'pintel.ai' });

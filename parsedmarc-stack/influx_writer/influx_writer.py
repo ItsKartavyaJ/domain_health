@@ -6,6 +6,7 @@ parsedmarc v8 appends aggregate report JSON objects to {output}/aggregate.json.
 We tail this file, parse each new report, and POST line protocol to InfluxDB v2.
 """
 import collections
+import hashlib
 import json
 import os
 import time
@@ -109,6 +110,14 @@ def write_to_influx(lines: list) -> None:
     urllib.request.urlopen(req, timeout=30)
 
 
+def _report_key(report: dict) -> str:
+    """Stable dedup key: report_id if present, content hash otherwise."""
+    rid = report.get("report_metadata", {}).get("report_id", "")
+    if rid:
+        return rid
+    return "hash:" + hashlib.md5(json.dumps(report, sort_keys=True).encode()).hexdigest()
+
+
 def parse_aggregate_json(text: str) -> list:
     """Parse parsedmarc's aggregate.json which may contain one or more JSON objects.
     parsedmarc appends JSON arrays of reports to the file."""
@@ -153,9 +162,7 @@ def main() -> None:
         try:
             text = AGGREGATE_FILE.read_text(encoding="utf-8")
             for report in parse_aggregate_json(text):
-                rid = report.get("report_metadata", {}).get("report_id", "")
-                if rid:
-                    processed_ids.add(rid)
+                processed_ids.add(_report_key(report))
             last_size = AGGREGATE_FILE.stat().st_size
             print(f"[INFO] found {len(processed_ids)} existing reports, starting from {last_size} bytes", flush=True)
         except Exception as exc:
@@ -166,19 +173,20 @@ def main() -> None:
             if AGGREGATE_FILE.exists():
                 current_size = AGGREGATE_FILE.stat().st_size
                 if current_size > last_size:
-                    text = AGGREGATE_FILE.read_text(encoding="utf-8")
-                    reports = parse_aggregate_json(text)
+                    with open(AGGREGATE_FILE, "rb") as f:
+                        f.seek(last_size)
+                        new_bytes = f.read(current_size - last_size)
+                    reports = parse_aggregate_json(new_bytes.decode("utf-8", errors="replace"))
 
                     new_lines = []
                     new_count = 0
                     for report in reports:
-                        rid = report.get("report_metadata", {}).get("report_id", "")
-                        if rid and rid in processed_ids:
+                        key = _report_key(report)
+                        if key in processed_ids:
                             continue
                         lines = report_to_lines(report)
                         new_lines.extend(lines)
-                        if rid:
-                            processed_ids.add(rid)
+                        processed_ids.add(key)
                         new_count += 1
 
                     if new_lines:

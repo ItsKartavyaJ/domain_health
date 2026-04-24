@@ -23,8 +23,10 @@ Modules:
 
 import argparse
 import logging
+import os
 import sys
 import time
+from pathlib import Path
 from typing import Callable
 
 import schedule
@@ -32,14 +34,16 @@ import schedule
 from config.settings import schedule_cfg as sched, alerts as alert_cfg
 
 # ── Logging ────────────────────────────────────────────────────────────────
+_log_file = Path(os.getenv("LOG_FILE", "/var/log/deliverability_monitor.log"))
+_handlers: list = [logging.StreamHandler(sys.stdout)]
+if _log_file.parent.exists():
+    _handlers.append(logging.FileHandler(_log_file, mode="a"))
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s  %(levelname)-8s  %(name)s  %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-        logging.FileHandler("/var/log/deliverability_monitor.log", mode="a"),
-    ],
+    handlers=_handlers,
 )
 log = logging.getLogger("scheduler")
 

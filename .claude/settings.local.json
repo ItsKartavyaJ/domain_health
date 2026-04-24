@@ -33,7 +33,10 @@
       "Bash(ls /drives)",
       "Bash(powershell.exe -Command \"cd D:\\\\pintel\\\\domain_health\\\\dmarc-dashboard; npm run build 2>&1\")",
       "Bash(powershell.exe -Command \"Set-Location 'D:\\\\pintel\\\\domain_health\\\\dmarc-dashboard'; npm run build 2>&1\")",
-      "Bash(powershell.exe *)"
+      "Bash(powershell.exe *)",
+      "Bash(xargs grep *)",
+      "Bash(awk -F\"'\" '{print $2}')",
+      "Bash(awk '{print $3}')"
     ]
   },
   "enableAllProjectMcpServers": true,

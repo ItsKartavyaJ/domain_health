@@ -14,7 +14,7 @@ const INFLUX_ORG = process.env.INFLUX_ORG || 'pintel';
 const INFLUX_BUCKET = process.env.INFLUX_BUCKET || 'dmarc';
 const INFLUX_TOKEN = process.env.INFLUX_TOKEN || '';
 const FIREBASE_PROJECT_ID = process.env.FIREBASE_PROJECT_ID || '';
-const ALLOWED_DOMAIN = 'pintel.ai';
+const ALLOWED_DOMAIN = process.env.ALLOWED_DOMAIN || 'pintel.ai';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -99,7 +99,30 @@ async function queryFlux(flux) {
   return parseCsv(await response.text());
 }
 
+const DOMAIN_STATS_TTL = 90 * 60 * 1000;
+let _domainStatsCache = null;
+let _domainStatsCachedAt = 0;
+let _domainStatsInflight = null;
+
 async function getDomainStats() {
+  if (_domainStatsCache && Date.now() - _domainStatsCachedAt < DOMAIN_STATS_TTL) {
+    return _domainStatsCache;
+  }
+  if (_domainStatsInflight) return _domainStatsInflight;
+
+  _domainStatsInflight = _fetchDomainStats().then((result) => {
+    _domainStatsCache = result;
+    _domainStatsCachedAt = Date.now();
+    _domainStatsInflight = null;
+    return result;
+  }).catch((err) => {
+    _domainStatsInflight = null;
+    throw err;
+  });
+  return _domainStatsInflight;
+}
+
+async function _fetchDomainStats() {
   let rows;
   try {
     rows = await queryFlux(`

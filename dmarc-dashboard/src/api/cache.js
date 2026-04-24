@@ -1,7 +1,13 @@
 const TTL = 90 * 60 * 1000; // 90 minutes
+const MAX_ENTRIES = 100;
 
 const store = new Map();
 const inflight = new Map();
+
+function evictOldest() {
+  const oldest = store.keys().next().value;
+  if (oldest !== undefined) store.delete(oldest);
+}
 
 export function cached(key, fetcher) {
   const hit = store.get(key);
@@ -11,6 +17,7 @@ export function cached(key, fetcher) {
 
   const promise = fetcher()
     .then((data) => {
+      if (store.size >= MAX_ENTRIES) evictOldest();
       store.set(key, { data, expiresAt: Date.now() + TTL });
       inflight.delete(key);
       return data;

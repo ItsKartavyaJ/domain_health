@@ -22,6 +22,11 @@ function srvCached(key, fetcher) {
   return p;
 }
 
+function _redactKey(str) {
+  const key = SL_KEY();
+  return key ? str.replaceAll(key, '***') : str;
+}
+
 async function _slFetch(path, opts = {}) {
   const sep = path.includes('?') ? '&' : '?';
   const url = `${SL_BASE}${path}${sep}api_key=${SL_KEY()}`;
@@ -39,6 +44,9 @@ async function _slFetch(path, opts = {}) {
       throw new Error(`Smartlead ${res.status}: ${body.slice(0, 200)}`);
     }
     return res.json();
+  } catch (err) {
+    err.message = _redactKey(err.message);
+    throw err;
   } finally {
     clearTimeout(timer);
   }

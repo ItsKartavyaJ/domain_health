@@ -14,6 +14,16 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+def _require_env(name: str) -> str:
+    val = os.getenv(name)
+    if not val:
+        raise RuntimeError(
+            f"Required environment variable {name!r} is missing or empty. "
+            f"Add it to your .env file."
+        )
+    return val
+
+
 # ── Fallback domain list ───────────────────────────────────────────────────
 # Used only if Smartlead API is unreachable at startup.
 # Normally domains are auto-discovered via domain_discovery.py.
@@ -33,7 +43,7 @@ SENDING_IPS: List[str] = [
 
 @dataclass
 class SmartleadConfig:
-    api_key: str = field(default_factory=lambda: os.environ["SMARTLEAD_API_KEY"])
+    api_key: str = field(default_factory=lambda: _require_env("SMARTLEAD_API_KEY"))
     base_url: str = "https://server.smartlead.ai/api/v1"
     lookback_days: int = 7
     # Batch size for warmup stats (per-mailbox calls — space them out)
@@ -53,7 +63,7 @@ class SmartleadConfig:
 @dataclass
 class InfluxConfig:
     url: str = field(default_factory=lambda: os.getenv("INFLUXDB_URL", "http://localhost:8086"))
-    token: str = field(default_factory=lambda: os.environ["INFLUXDB_TOKEN"])
+    token: str = field(default_factory=lambda: _require_env("INFLUXDB_TOKEN"))
     org: str = field(default_factory=lambda: os.getenv("INFLUXDB_ORG", "pintel"))
     bucket: str = field(default_factory=lambda: os.getenv("INFLUXDB_BUCKET", "deliverability"))
 

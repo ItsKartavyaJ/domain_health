@@ -47,7 +47,7 @@ def _normalize_status(raw_status: Any) -> str:
 
 
 def _is_healthy(status: str) -> bool:
-    return status in HEALTHY_STATUSES or status == "connected"
+    return status in HEALTHY_STATUSES
 
 
 def _needs_reconnect(status: str) -> bool:

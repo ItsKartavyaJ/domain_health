@@ -1,5 +1,3 @@
-version: "3.9"
-
 # ── Pintel DMARC Stack ────────────────────────────────────────────────────────
 # Services:
 #   parsedmarc  — parses DMARC reports from Gmail inbox → writes to InfluxDB
@@ -7,7 +5,6 @@ version: "3.9"
 #   grafana     — DMARC dashboards (your React dashboard reads InfluxDB directly)
 #   caddy       — reverse proxy: dmarc.pintel.ai → Grafana, influx.pintel.ai → InfluxDB
 #
-# GCP VM: 34.44.125.78  us-central1-f
 # All data persisted in named Docker volumes.
 # Run: docker compose up -d
 

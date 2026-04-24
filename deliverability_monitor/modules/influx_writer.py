@@ -146,5 +146,27 @@ class InfluxWriter:
         )
 
 
-# Module-level singleton
-writer = InfluxWriter()
+class _LazyWriter:
+    """Defers InfluxWriter construction until first write_points() call.
+    This avoids crashing at import time when INFLUXDB_TOKEN is missing."""
+
+    def __init__(self):
+        self._writer: InfluxWriter | None = None
+
+    def _get(self) -> InfluxWriter:
+        if self._writer is None:
+            self._writer = InfluxWriter()
+        return self._writer
+
+    def write_points(self, points: List[Point]) -> None:
+        self._get().write_points(points)
+
+    def close(self) -> None:
+        if self._writer:
+            self._writer.close()
+
+    def __getattr__(self, name):
+        return getattr(InfluxWriter, name)
+
+
+writer = _LazyWriter()

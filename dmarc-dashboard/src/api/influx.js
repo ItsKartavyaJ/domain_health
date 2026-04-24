@@ -6,7 +6,7 @@ async function authFetch(url) {
   const res = await fetch(url, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
-  if (!res.ok) throw new Error('Failed to load data — check API connection.');
+  if (!res.ok) throw new Error(`Failed to load data — HTTP ${res.status}`);
   return res.json();
 }
 
