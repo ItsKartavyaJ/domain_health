@@ -2,16 +2,9 @@ import { useEffect, useState, useRef } from 'react';
 import { BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
 import DateFilter from '../components/DateFilter';
 import Badge from '../components/Badge';
+import SectionLoader from '../components/SectionLoader';
 import { getCampaignStats, getDailyStats } from '../api/smartlead';
-
-const TODAY = new Date().toISOString().slice(0, 10);
-const THIRTY_DAYS_AGO = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
-
-function SectionLoader({ height = 200 }) {
-  return (
-    <div style={{ height, display: 'grid', placeItems: 'center', color: 'var(--muted)', fontSize: 13 }}>Loading…</div>
-  );
-}
+import { TODAY, THIRTY_DAYS_AGO } from '../utils/dates';
 
 export default function Campaigns() {
   const [startDate, setStartDate] = useState(THIRTY_DAYS_AGO);
@@ -214,7 +207,7 @@ export default function Campaigns() {
                 {filtered.length === 0 && (
                   <tr><td colSpan={9} style={{ padding: '32px 18px', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>No campaigns found</td></tr>
                 )}
-                {filtered.slice(0, 50).map((c, i) => (
+                {filtered.map((c, i) => (
                   <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
                     <td style={{ padding: '12px 14px', fontSize: 13, fontWeight: 500, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.campaign_name || `Campaign ${c.campaign_id || i}`}</td>
                     <td style={{ padding: '12px 14px', fontSize: 13 }}>{(c.sent || 0).toLocaleString()}</td>

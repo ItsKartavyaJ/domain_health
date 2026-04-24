@@ -2,9 +2,7 @@ import { useEffect, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import DateFilter from '../components/DateFilter';
 import { getCampaignList, getSequenceAnalytics } from '../api/smartlead';
-
-const TODAY = new Date().toISOString().slice(0, 10);
-const THIRTY_DAYS_AGO = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+import { TODAY, THIRTY_DAYS_AGO } from '../utils/dates';
 
 function fetchSequences(campaignId, s, e, setSequences, setError, setSeqLoading) {
   if (!campaignId) return;
@@ -65,14 +63,6 @@ export default function Sequences() {
     return rate > bestRate ? step : best;
   }, chartData[0] || { name: '—', sent: 0, replied: 0 });
 
-  if (error) {
-    return (
-      <div style={{ padding: 32, display: 'flex', justifyContent: 'center' }}>
-        <div style={{ background: 'var(--err-bg)', color: 'var(--err-text)', borderRadius: 10, padding: '14px 20px', fontSize: 13 }}>{error}</div>
-      </div>
-    );
-  }
-
   return (
     <main style={{ maxWidth: 1280, margin: '0 auto', padding: '28px 24px 48px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
@@ -87,6 +77,8 @@ export default function Sequences() {
 
       {loading ? (
         <div style={{ display: 'flex', justifyContent: 'center', height: 200, alignItems: 'center', color: 'var(--muted)', fontSize: 13 }}>Loading campaigns...</div>
+      ) : error && campaigns.length === 0 ? (
+        <div style={{ background: 'var(--err-bg)', color: 'var(--err-text)', borderRadius: 10, padding: '14px 20px', fontSize: 13 }}>{error}</div>
       ) : (
         <>
           {/* Campaign selector */}
@@ -109,6 +101,8 @@ export default function Sequences() {
 
           {seqLoading ? (
             <div style={{ display: 'flex', justifyContent: 'center', height: 200, alignItems: 'center', color: 'var(--muted)', fontSize: 13 }}>Loading sequence data...</div>
+          ) : error ? (
+            <div style={{ background: 'var(--err-bg)', color: 'var(--err-text)', borderRadius: 10, padding: '14px 20px', fontSize: 13 }}>{error}</div>
           ) : sequences.length === 0 ? (
             <div style={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 12, padding: '48px 20px', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
               {selectedCampaign ? 'No sequence data for this campaign' : 'Select a campaign to view sequence analytics'}

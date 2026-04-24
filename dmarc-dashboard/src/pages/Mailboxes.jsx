@@ -2,10 +2,9 @@ import { useEffect, useState, useRef } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import DateFilter from '../components/DateFilter';
 import Badge from '../components/Badge';
+import SectionLoader from '../components/SectionLoader';
 import { getMailboxHealth, getDomainHealth, getEmailAccounts } from '../api/smartlead';
-
-const TODAY = new Date().toISOString().slice(0, 10);
-const THIRTY_DAYS_AGO = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+import { TODAY, THIRTY_DAYS_AGO } from '../utils/dates';
 
 function rateStatus(rate) {
   if (rate > 3) return 'err';
@@ -51,12 +50,6 @@ function mergeAccounts(healthList, accountList) {
     }
   }
   return merged;
-}
-
-function SectionLoader({ height = 200 }) {
-  return (
-    <div style={{ height, display: 'grid', placeItems: 'center', color: 'var(--muted)', fontSize: 13 }}>Loading…</div>
-  );
 }
 
 export default function Mailboxes() {
@@ -267,7 +260,7 @@ export default function Mailboxes() {
                 {filtered.length === 0 && (
                   <tr><td colSpan={8} style={{ padding: '32px 18px', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>No mailboxes found</td></tr>
                 )}
-                {filtered.slice(0, 100).map((m, i) => {
+                {filtered.map((m, i) => {
                   const bounceRate = m.bounce_rate || 0;
                   const statusType = m.status === 'active' ? 'ok' : m.status === 'disconnected' ? 'err' : 'warn';
                   const statusLabel = m.status === 'active' ? 'Active' : m.status === 'disconnected' ? 'Disconnected' : 'Idle';

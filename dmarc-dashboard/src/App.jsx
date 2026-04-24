@@ -17,6 +17,13 @@ const tabs = [
   { key: 'domains', label: 'Domains' },
 ];
 
+const VALID_TABS = new Set(tabs.map((t) => t.key));
+
+function getHashTab() {
+  const hash = window.location.hash.slice(1);
+  return VALID_TABS.has(hash) ? hash : 'overview';
+}
+
 const tabComponents = {
   overview: Overview,
   replies: Replies,
@@ -29,7 +36,7 @@ const tabComponents = {
 export default function App() {
   const [user, setUser] = useState(null);
   const [checkingAuth, setCheckingAuth] = useState(true);
-  const [activeTab, setActiveTab] = useState('overview');
+  const [activeTab, setActiveTab] = useState(getHashTab);
 
   useEffect(() => {
     const unsubscribe = onAuthChange((firebaseUser) => {
@@ -39,9 +46,22 @@ export default function App() {
     return unsubscribe;
   }, []);
 
+  useEffect(() => {
+    function onHashChange() {
+      setActiveTab(getHashTab());
+    }
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
+
   async function handleLogout() {
     await logout();
     setUser(null);
+  }
+
+  function handleTabClick(key) {
+    window.location.hash = key;
+    setActiveTab(key);
   }
 
   if (checkingAuth) {
@@ -87,7 +107,7 @@ export default function App() {
           {tabs.map((tab) => (
             <div
               key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
+              onClick={() => handleTabClick(tab.key)}
               style={{
                 fontSize: 13, padding: '5px 11px', borderRadius: 6, cursor: 'pointer',
                 background: activeTab === tab.key ? 'var(--surface)' : 'transparent',

@@ -30,6 +30,8 @@ from modules.utils import safe_float as _safe_float, safe_int as _safe_int
 
 log = logging.getLogger(__name__)
 
+_ACTIVE_STATUSES = frozenset({"ACTIVE", "IN_PROGRESS", "STARTED"})
+
 
 def fetch_active_campaigns() -> List[Dict]:
     """
@@ -40,8 +42,7 @@ def fetch_active_campaigns() -> List[Dict]:
     if data is None:
         return []
     campaigns = data if isinstance(data, list) else data.get("data", data.get("list", []))
-    active_statuses = {"ACTIVE", "IN_PROGRESS", "STARTED", "active", "in_progress"}
-    return [c for c in campaigns if str(c.get("status", "")).upper() in {s.upper() for s in active_statuses}]
+    return [c for c in campaigns if str(c.get("status", "")).upper() in _ACTIVE_STATUSES]
 
 
 def fetch_campaign_stats(campaign_id: int) -> Optional[Dict]:

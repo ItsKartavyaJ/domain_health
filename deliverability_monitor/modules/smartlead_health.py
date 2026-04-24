@@ -21,7 +21,7 @@ import requests
 from config.settings import smartlead as sl_cfg, alerts as alert_cfg
 from modules.influx_writer import writer
 from modules.alerter import send_alert
-from modules.utils import safe_float as _safe_float, safe_int as _safe_int
+from modules.utils import safe_float as _safe_float, safe_int as _safe_int, health_score as _health_score
 
 log = logging.getLogger(__name__)
 
@@ -76,16 +76,6 @@ class SmartleadClient:
         """GET /analytics/mailbox/overall-stats — account-wide totals"""
         return self._get("/analytics/mailbox/overall-stats")
 
-    def fetch_provider_performance(self) -> Optional[List[Dict]]:
-        """GET /analytics/mailbox/provider-wise-overall-performance"""
-        data = self._get("/analytics/mailbox/provider-wise-overall-performance")
-        if data is None:
-            return None
-        if isinstance(data, list):
-            return data
-        return data.get("data", [])
-
-
 def parse_domain_row(row: Dict) -> Dict:
     """
     Normalize one row from domain-wise-health-metrics.
@@ -117,9 +107,7 @@ def parse_mailbox_row(row: Dict) -> Dict:
     inbox_pct = _safe_float(row.get("inbox_percentage", row.get("inbox_pct", row.get("inbox_rate"))))
     bounce_rate = _safe_float(row.get("bounce_rate", row.get("bounce_percentage")))
 
-    # Composite health score (same weights as your existing spam_audit.py logic)
-    health_score = max(0.0, 100.0 - (spam_pct * 2.0) - (bounce_rate * 3.0) + (inbox_pct * 0.2))
-    health_score = min(health_score, 100.0)
+    health_score = _health_score(inbox_pct, spam_pct, bounce_rate)
 
     return {
         "email": email,

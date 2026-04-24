@@ -52,7 +52,7 @@ export default function DomainTable({ domains }) {
               const scoreColor = d.status === 'ok' ? 'var(--ok-text)' : d.status === 'warn' ? 'var(--warn-text)' : 'var(--err-text)';
               const barColor   = d.rate > 80 ? '#22C55E' : d.rate > 50 ? '#F59E0B' : '#EF4444';
               return (
-                <tr key={d.domain} style={{ borderBottom: '1px solid var(--border)', cursor: 'pointer' }}>
+                <tr key={d.domain} style={{ borderBottom: '1px solid var(--border)' }}>
                   <td style={{ padding: '12px 18px', fontWeight: 600, fontSize: 13, whiteSpace: 'nowrap' }}>{d.domain}</td>
                   <td style={{ padding: '12px 18px' }}>
                     <span style={{ fontSize: 14, fontWeight: 700, color: scoreColor }}>{d.score}</span>

@@ -31,6 +31,7 @@ log = logging.getLogger(__name__)
 # Status strings Smartlead uses for a healthy connected account.
 # Everything not in this set is considered a problem.
 HEALTHY_STATUSES = {"connected", "active", "1", "true", "ok"}
+_RECONNECT_STATUSES: frozenset = frozenset(s.lower() for s in sl_cfg.reconnect_alert_statuses)
 
 
 def _normalize_status(raw_status: Any) -> str:
@@ -51,7 +52,7 @@ def _is_healthy(status: str) -> bool:
 
 
 def _needs_reconnect(status: str) -> bool:
-    return status in [s.lower() for s in sl_cfg.reconnect_alert_statuses]
+    return status in _RECONNECT_STATUSES
 
 
 def parse_mailbox_status(mb: Dict) -> Dict:

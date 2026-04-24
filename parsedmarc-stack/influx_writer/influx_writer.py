@@ -178,6 +178,7 @@ def main() -> None:
                         new_bytes = f.read(current_size - last_size)
                     reports = parse_aggregate_json(new_bytes.decode("utf-8", errors="replace"))
 
+                    pending_keys = []
                     new_lines = []
                     new_count = 0
                     for report in reports:
@@ -186,11 +187,13 @@ def main() -> None:
                             continue
                         lines = report_to_lines(report)
                         new_lines.extend(lines)
-                        processed_ids.add(key)
+                        pending_keys.append(key)
                         new_count += 1
 
                     if new_lines:
                         write_to_influx(new_lines)
+                        for key in pending_keys:
+                            processed_ids.add(key)
                         print(f"[OK] wrote {len(new_lines)} points from {new_count} new reports", flush=True)
 
                     last_size = current_size

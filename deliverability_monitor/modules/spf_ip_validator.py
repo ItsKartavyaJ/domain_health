@@ -37,6 +37,8 @@ PUBLIC_NS = ["8.8.8.8", "1.1.1.1"]
 MAX_DNS_LOOKUPS = 10   # RFC 7208 limit
 
 _spf_txt_cache: Dict[str, Optional[str]] = {}
+_a_record_cache: Dict[str, List[str]] = {}
+_mx_record_cache: Dict[str, List[str]] = {}
 
 
 def _resolver() -> dns.resolver.Resolver:
@@ -89,7 +91,9 @@ class SPFWalker:
         return result
 
     def _resolve_a(self, domain: str) -> List[str]:
-        """Resolve A records for a domain."""
+        """Resolve A records for a domain. Cache hits don't count against the lookup limit."""
+        if domain in _a_record_cache:
+            return _a_record_cache[domain]
         if self.lookup_count >= MAX_DNS_LOOKUPS:
             return []
         self.lookup_count += 1
@@ -99,10 +103,13 @@ class SPFWalker:
                 ips.append(str(rdata))
         except Exception:
             pass
+        _a_record_cache[domain] = ips
         return ips
 
     def _resolve_mx(self, domain: str) -> List[str]:
-        """Resolve MX then A records."""
+        """Resolve MX then A records. Cache hits don't count against the lookup limit."""
+        if domain in _mx_record_cache:
+            return _mx_record_cache[domain]
         if self.lookup_count >= MAX_DNS_LOOKUPS:
             return []
         self.lookup_count += 1
@@ -113,6 +120,7 @@ class SPFWalker:
                 ips.extend(self._resolve_a(str(mx.exchange).rstrip(".")))
         except Exception:
             pass
+        _mx_record_cache[domain] = ips
         return ips
 
     def check_ip(self, ip: str, domain: str, depth: int = 0) -> Tuple[bool, str]:

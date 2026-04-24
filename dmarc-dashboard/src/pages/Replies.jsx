@@ -1,19 +1,12 @@
 import { useEffect, useState, useRef } from 'react';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid } from 'recharts';
 import DateFilter from '../components/DateFilter';
+import SectionLoader from '../components/SectionLoader';
 import { getReplyCategories, getDailyPositiveReplies, getResponseStats } from '../api/smartlead';
+import { TODAY, THIRTY_DAYS_AGO } from '../utils/dates';
 
 const COLORS = ['#22C55E', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#6B7280'];
 const SENTIMENT_COLORS = { positive: '#22C55E', neutral: '#3B82F6', negative: '#EF4444' };
-
-const TODAY = new Date().toISOString().slice(0, 10);
-const THIRTY_DAYS_AGO = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
-
-function SectionLoader({ height = 200 }) {
-  return (
-    <div style={{ height, display: 'grid', placeItems: 'center', color: 'var(--muted)', fontSize: 13 }}>Loading…</div>
-  );
-}
 
 export default function Replies() {
   const [startDate, setStartDate] = useState(THIRTY_DAYS_AGO);
@@ -177,7 +170,7 @@ export default function Replies() {
                 </tr>
               </thead>
               <tbody>
-                {responseStats.slice(0, 25).map((c, i) => (
+                {responseStats.map((c, i) => (
                   <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
                     <td style={{ padding: '12px 18px', fontSize: 13, fontWeight: 500, maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.campaign_name || `Campaign ${c.campaign_id}`}</td>
                     <td style={{ padding: '12px 18px', fontSize: 13 }}>{(c.total_sent || 0).toLocaleString()}</td>

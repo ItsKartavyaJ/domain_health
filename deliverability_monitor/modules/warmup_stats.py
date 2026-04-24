@@ -30,7 +30,7 @@ from config.settings import smartlead as sl_cfg, alerts as alert_cfg
 from modules.domain_discovery import get_mailboxes
 from modules.influx_writer import writer
 from modules.alerter import send_alert
-from modules.utils import safe_float as _safe_float, safe_int as _safe_int
+from modules.utils import safe_float as _safe_float, safe_int as _safe_int, health_score as _health_score
 
 log = logging.getLogger(__name__)
 
@@ -74,11 +74,7 @@ def parse_warmup(account_id: int, email: str, raw: Dict) -> Dict:
     if spam_pct == 0 and total_sent > 0:
         spam_pct = round(spam_count / total_sent * 100, 2)
 
-    # Warmup health score: 0-100
-    # Higher inbox %, lower spam % → higher score
-    health_score = max(0.0, min(100.0,
-        inbox_pct - (spam_pct * 2.0)
-    ))
+    health_score = _health_score(inbox_pct, spam_pct)
 
     domain = email.split("@")[1] if "@" in email else "unknown"
 

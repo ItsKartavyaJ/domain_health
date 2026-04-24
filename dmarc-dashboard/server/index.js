@@ -156,7 +156,7 @@ from(bucket: "${INFLUX_BUCKET}")
 `);
   } catch (err) {
     // Bucket empty or no dmarc_aggregate data yet — return empty
-    if (err.message.includes('no results') || err.message.includes('not found') || err.message.includes('empty')) {
+    if (err.message.includes('no results') || err.message.includes('404')) {
       return [];
     }
     throw err;

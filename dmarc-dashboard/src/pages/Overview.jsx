@@ -57,10 +57,6 @@ export default function Overview() {
             {domainsLoading ? 'Loading…' : `${domains.length} domains · last 30 days`}
           </p>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button style={{ fontSize: 13, padding: '7px 14px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--card-bg)', color: 'var(--text)', cursor: 'pointer' }}>Export CSV</button>
-          <button style={{ fontSize: 13, padding: '7px 14px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#fff', cursor: 'pointer', fontWeight: 500 }}>+ Add domain</button>
-        </div>
       </div>
 
       {/* Summary stats — shows as soon as domains load */}
