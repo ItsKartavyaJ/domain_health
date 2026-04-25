@@ -22,6 +22,7 @@ INFLUX_BUCKET = os.environ.get("INFLUX_BUCKET", "dmarc")
 AGGREGATE_FILE = Path(os.environ.get("AGGREGATE_FILE", "/data/aggregate.json"))
 POLL_INTERVAL = int(os.environ.get("POLL_INTERVAL", "30"))
 MAX_PROCESSED_IDS = 10_000
+MAX_READ_BYTES = 50 * 1024 * 1024  # 50 MB per poll — prevents OOM on large backlogs
 
 
 class BoundedIdSet:
@@ -174,13 +175,13 @@ def main() -> None:
             if AGGREGATE_FILE.exists():
                 current_size = AGGREGATE_FILE.stat().st_size
                 if current_size < last_size:
-                    # File was truncated or rotated — re-read from the start.
                     print(f"[WARN] file shrank ({last_size} → {current_size} bytes) — resetting read position", flush=True)
                     last_size = 0
-                if current_size > last_size:
+                elif current_size > last_size:
+                    read_end = min(last_size + MAX_READ_BYTES, current_size)
                     with open(AGGREGATE_FILE, "rb") as f:
                         f.seek(last_size)
-                        new_bytes = f.read(current_size - last_size)
+                        new_bytes = f.read(read_end - last_size)
                     reports = parse_aggregate_json(new_bytes.decode("utf-8", errors="replace"))
 
                     pending_keys = []
@@ -207,7 +208,7 @@ def main() -> None:
                             processed_ids.add(key)
                         print(f"[INFO] {new_count} empty reports marked as processed", flush=True)
 
-                    last_size = current_size
+                    last_size = read_end
         except urllib.error.HTTPError as exc:
             print(f"[ERROR] InfluxDB {exc.code}: {exc.read()}", flush=True)
         except Exception as exc:
