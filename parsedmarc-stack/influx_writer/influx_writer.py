@@ -154,19 +154,20 @@ def main() -> None:
     print(f"[INFO] watching {AGGREGATE_FILE} every {POLL_INTERVAL}s", flush=True)
     print(f"[INFO] influx -> {INFLUX_URL} org={INFLUX_ORG} bucket={INFLUX_BUCKET}", flush=True)
 
-    last_size = 0
     processed_ids = BoundedIdSet()
 
-    # Load existing processed IDs if file already exists
+    # Seek to the end of any pre-existing file so we only process new appends.
+    # Reading the whole file at startup would OOM the container if parsedmarc has
+    # been running for days and the file has grown into the hundreds of MB.
+    # Reports already in the file were already written to InfluxDB during previous
+    # runs; we don't need to replay them.
+    last_size = 0
     if AGGREGATE_FILE.exists():
         try:
-            text = AGGREGATE_FILE.read_text(encoding="utf-8")
-            for report in parse_aggregate_json(text):
-                processed_ids.add(_report_key(report))
             last_size = AGGREGATE_FILE.stat().st_size
-            print(f"[INFO] found {len(processed_ids)} existing reports, starting from {last_size} bytes", flush=True)
+            print(f"[INFO] existing file is {last_size} bytes — watching for new appends only", flush=True)
         except Exception as exc:
-            print(f"[WARN] error reading existing file: {exc}", flush=True)
+            print(f"[WARN] could not stat existing file: {exc}", flush=True)
 
     while True:
         try:
@@ -195,6 +196,12 @@ def main() -> None:
                         for key in pending_keys:
                             processed_ids.add(key)
                         print(f"[OK] wrote {len(new_lines)} points from {new_count} new reports", flush=True)
+                    elif new_count:
+                        # Reports parsed but every one had an empty records list —
+                        # still advance processed_ids so they aren't re-checked.
+                        for key in pending_keys:
+                            processed_ids.add(key)
+                        print(f"[INFO] {new_count} new reports had no records — skipped", flush=True)
 
                     last_size = current_size
         except urllib.error.HTTPError as exc:
