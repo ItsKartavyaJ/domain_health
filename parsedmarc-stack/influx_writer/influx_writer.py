@@ -22,6 +22,10 @@ INFLUX_BUCKET = os.environ.get("INFLUX_BUCKET", "dmarc")
 AGGREGATE_FILE = Path(os.environ.get("AGGREGATE_FILE", "/data/aggregate.json"))
 POLL_INTERVAL = int(os.environ.get("POLL_INTERVAL", "30"))
 MAX_PROCESSED_IDS = 10_000
+# Maximum bytes to read per poll cycle. Keeps memory bounded even when the
+# container is restarted after a long outage and parsedmarc has accumulated
+# many batches.  50 MB comfortably fits in the container's memory limit.
+MAX_READ_BYTES = 50 * 1024 * 1024
 
 
 class BoundedIdSet:
@@ -173,10 +177,27 @@ def main() -> None:
         try:
             if AGGREGATE_FILE.exists():
                 current_size = AGGREGATE_FILE.stat().st_size
+
+                # File was truncated or replaced (e.g. parsedmarc restarted and
+                # created a fresh file).  Reset so we re-read from the beginning.
+                if current_size < last_size:
+                    print(
+                        f"[WARN] file shrank from {last_size} to {current_size} bytes — resetting position",
+                        flush=True,
+                    )
+                    last_size = 0
+
                 if current_size > last_size:
+                    read_end = min(last_size + MAX_READ_BYTES, current_size)
                     with open(AGGREGATE_FILE, "rb") as f:
                         f.seek(last_size)
-                        new_bytes = f.read(current_size - last_size)
+                        new_bytes = f.read(read_end - last_size)
+                    if read_end < current_size:
+                        print(
+                            f"[INFO] large gap detected — reading {len(new_bytes) // 1024 // 1024} MB "
+                            f"({read_end}/{current_size} bytes); will catch up over next polls",
+                            flush=True,
+                        )
                     reports = parse_aggregate_json(new_bytes.decode("utf-8", errors="replace"))
 
                     pending_keys = []
@@ -203,7 +224,7 @@ def main() -> None:
                             processed_ids.add(key)
                         print(f"[INFO] {new_count} new reports had no records — skipped", flush=True)
 
-                    last_size = current_size
+                    last_size = read_end
         except urllib.error.HTTPError as exc:
             print(f"[ERROR] InfluxDB {exc.code}: {exc.read()}", flush=True)
         except Exception as exc:
