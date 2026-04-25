@@ -162,19 +162,12 @@ def main() -> None:
     print(f"[INFO] watching {AGGREGATE_FILE} every {POLL_INTERVAL}s", flush=True)
     print(f"[INFO] influx -> {INFLUX_URL} org={INFLUX_ORG} bucket={INFLUX_BUCKET}", flush=True)
 
-    last_size = 0
     processed_ids = BoundedIdSet()
 
-    # Load existing processed IDs if file already exists
-    if AGGREGATE_FILE.exists():
-        try:
-            text = AGGREGATE_FILE.read_text(encoding="utf-8")
-            for report in parse_aggregate_json(text):
-                processed_ids.add(_report_key(report))
-            last_size = AGGREGATE_FILE.stat().st_size
-            print(f"[INFO] found {len(processed_ids)} existing reports, starting from {last_size} bytes", flush=True)
-        except Exception as exc:
-            print(f"[WARN] error reading existing file: {exc}", flush=True)
+    # On startup, skip existing content — it was already written to InfluxDB in
+    # previous runs. Reading the whole file would OOM the container on large files.
+    last_size = AGGREGATE_FILE.stat().st_size if AGGREGATE_FILE.exists() else 0
+    print(f"[INFO] skipping {last_size} existing bytes — watching for new appends", flush=True)
 
     while True:
         try:
