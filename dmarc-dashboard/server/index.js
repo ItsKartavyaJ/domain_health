@@ -166,6 +166,7 @@ const DOMAIN_STATS_TTL = 90 * 60 * 1000;
 let _domainStatsCache = null;
 let _domainStatsCachedAt = 0;
 let _domainStatsInflight = null;
+let _domainStatsGen = 0;  // incremented on refresh so stale inflights don't overwrite
 
 async function getDomainStats() {
   if (_domainStatsCache && Date.now() - _domainStatsCachedAt < DOMAIN_STATS_TTL) {
@@ -173,9 +174,12 @@ async function getDomainStats() {
   }
   if (_domainStatsInflight) return _domainStatsInflight;
 
+  const gen = _domainStatsGen;
   _domainStatsInflight = _fetchDomainStats().then((result) => {
-    _domainStatsCache = result;
-    _domainStatsCachedAt = Date.now();
+    if (_domainStatsGen === gen) {
+      _domainStatsCache = result;
+      _domainStatsCachedAt = Date.now();
+    }
     _domainStatsInflight = null;
     return result;
   }).catch((err) => {
@@ -304,8 +308,10 @@ app.get('/api/metrics/alerts', authMiddleware, rateLimitMiddleware, async (_req,
 });
 
 app.post('/api/metrics/refresh', authMiddleware, rateLimitMiddleware, (_req, res) => {
+  _domainStatsGen++;          // invalidate any in-flight query result
   _domainStatsCache = null;
   _domainStatsCachedAt = 0;
+  _domainStatsInflight = null;
   return res.json({ ok: true });
 });
 

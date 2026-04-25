@@ -41,16 +41,6 @@ services:
       PARSEDMARC_IMAP_USER: "${DMARC_MAILBOX_USER}"
       PARSEDMARC_IMAP_PASSWORD: "${DMARC_MAILBOX_APP_PASSWORD}"
 
-      # ── InfluxDB v2 output ────────────────────────────────────────────────
-      # parsedmarc supports InfluxDB via the [influxdb] section.
-      # We pass everything via env vars so secrets never touch the filesystem.
-      PARSEDMARC_INFLUXDB_HOST: "influxdb"
-      PARSEDMARC_INFLUXDB_PORT: "8086"
-      PARSEDMARC_INFLUXDB_SSL: "false"
-      PARSEDMARC_INFLUXDB_TOKEN: "${INFLUXDB_TOKEN}"
-      PARSEDMARC_INFLUXDB_ORG: "${INFLUXDB_ORG}"
-      PARSEDMARC_INFLUXDB_BUCKET: "${INFLUXDB_DMARC_BUCKET}"
-
     volumes:
       - parsedmarc_data:/data
     depends_on:

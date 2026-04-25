@@ -119,19 +119,22 @@ def _report_key(report: dict) -> str:
     return "hash:" + hashlib.sha256(json.dumps(report, sort_keys=True).encode()).hexdigest()
 
 
-def parse_aggregate_json(text: str) -> list:
+def parse_aggregate_json(text: str) -> tuple[list, int]:
     """Parse parsedmarc's aggregate.json which may contain one or more JSON objects.
-    parsedmarc appends JSON arrays of reports to the file."""
-    reports = []
-    # Try as a single JSON array first
-    text = text.strip()
-    if not text:
-        return reports
+    parsedmarc appends JSON arrays of reports to the file.
 
-    # parsedmarc appends complete JSON arrays, one per batch
-    # Try to parse by finding top-level [ ] blocks
+    Returns (reports, consumed_bytes) where consumed_bytes is the number of bytes
+    from the original UTF-8 input that were fully parsed. The caller must advance
+    last_size by consumed_bytes only — not by the full read length — so a
+    partial array at the tail (parsedmarc mid-write) is retried on the next poll.
+    """
+    reports = []
+    if not text:
+        return reports, 0
+
     decoder = json.JSONDecoder()
     pos = 0
+    last_good_pos = 0  # char position after the last successfully parsed object
     while pos < len(text):
         # Skip whitespace
         while pos < len(text) and text[pos] in " \t\n\r":
@@ -144,19 +147,23 @@ def parse_aggregate_json(text: str) -> list:
                 reports.extend(obj)
             elif isinstance(obj, dict):
                 reports.append(obj)
+            last_good_pos = end
             pos = end
         except json.JSONDecodeError:
             # Skip past corrupt data to the next top-level object boundary.
             next_boundary = text.find("\n[", pos + 1)
             if next_boundary == -1:
-                skipped = len(text) - pos
-                if skipped > 0:
-                    print(f"[WARN] skipped {skipped} corrupt bytes at offset {pos}", flush=True)
+                # Possibly a partial write at the tail — don't advance past it.
+                remaining = len(text) - pos
+                if remaining > 0:
+                    print(f"[WARN] {remaining} unparsed bytes at tail — will retry next poll", flush=True)
                 break
             skipped = next_boundary - pos
             print(f"[WARN] skipped {skipped} corrupt bytes at offset {pos}", flush=True)
             pos = next_boundary
-    return reports
+
+    consumed_bytes = len(text[:last_good_pos].encode("utf-8", errors="replace"))
+    return reports, consumed_bytes
 
 
 def main() -> None:
@@ -182,7 +189,7 @@ def main() -> None:
                     with open(AGGREGATE_FILE, "rb") as f:
                         f.seek(last_size)
                         new_bytes = f.read(read_end - last_size)
-                    reports = parse_aggregate_json(new_bytes.decode("utf-8", errors="replace"))
+                    reports, consumed = parse_aggregate_json(new_bytes.decode("utf-8", errors="replace"))
 
                     pending_keys = []
                     new_lines = []
@@ -208,7 +215,9 @@ def main() -> None:
                             processed_ids.add(key)
                         print(f"[INFO] {new_count} empty reports marked as processed", flush=True)
 
-                    last_size = read_end
+                    # Only advance by fully-parsed bytes so a partial write at the
+                    # tail is retried on the next poll rather than permanently skipped.
+                    last_size = last_size + consumed
         except urllib.error.HTTPError as exc:
             print(f"[ERROR] InfluxDB {exc.code}: {exc.read()}", flush=True)
         except Exception as exc:
