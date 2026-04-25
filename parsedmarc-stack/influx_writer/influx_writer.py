@@ -200,6 +200,12 @@ def main() -> None:
                         for key in pending_keys:
                             processed_ids.add(key)
                         print(f"[OK] wrote {len(new_lines)} points from {new_count} new reports", flush=True)
+                    elif new_count:
+                        # Reports parsed OK but had no records — mark as seen so
+                        # they are not re-checked on every subsequent poll.
+                        for key in pending_keys:
+                            processed_ids.add(key)
+                        print(f"[INFO] {new_count} empty reports marked as processed", flush=True)
 
                     last_size = current_size
         except urllib.error.HTTPError as exc:
