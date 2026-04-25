@@ -166,7 +166,7 @@ class _LazyWriter:
             self._writer.close()
 
     def __getattr__(self, name):
-        return getattr(InfluxWriter, name)
+        return getattr(self._get(), name)
 
 
 writer = _LazyWriter()

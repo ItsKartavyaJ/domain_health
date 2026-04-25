@@ -115,7 +115,7 @@ def _report_key(report: dict) -> str:
     rid = report.get("report_metadata", {}).get("report_id", "")
     if rid:
         return rid
-    return "hash:" + hashlib.md5(json.dumps(report, sort_keys=True).encode()).hexdigest()
+    return "hash:" + hashlib.sha256(json.dumps(report, sort_keys=True).encode()).hexdigest()
 
 
 def parse_aggregate_json(text: str) -> list:
@@ -145,8 +145,16 @@ def parse_aggregate_json(text: str) -> list:
                 reports.append(obj)
             pos = end
         except json.JSONDecodeError:
-            # Skip past the problem character and try again
-            pos += 1
+            # Skip past corrupt data to the next top-level object boundary.
+            next_boundary = text.find("\n[", pos + 1)
+            if next_boundary == -1:
+                skipped = len(text) - pos
+                if skipped > 0:
+                    print(f"[WARN] skipped {skipped} corrupt bytes at offset {pos}", flush=True)
+                break
+            skipped = next_boundary - pos
+            print(f"[WARN] skipped {skipped} corrupt bytes at offset {pos}", flush=True)
+            pos = next_boundary
     return reports
 
 
@@ -172,6 +180,10 @@ def main() -> None:
         try:
             if AGGREGATE_FILE.exists():
                 current_size = AGGREGATE_FILE.stat().st_size
+                if current_size < last_size:
+                    # File was truncated or rotated — re-read from the start.
+                    print(f"[WARN] file shrank ({last_size} → {current_size} bytes) — resetting read position", flush=True)
+                    last_size = 0
                 if current_size > last_size:
                     with open(AGGREGATE_FILE, "rb") as f:
                         f.seek(last_size)

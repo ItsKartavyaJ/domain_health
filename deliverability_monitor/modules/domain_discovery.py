@@ -210,21 +210,21 @@ def refresh(force: bool = False) -> None:
 def get_domains() -> List[str]:
     """Return current discovered domain list. Auto-refreshes if stale."""
     if not _cache["domains"]:
-        refresh(force=True)
+        refresh()
     return _cache["domains"]
 
 
 def get_ips() -> List[str]:
     """Return current discovered IP list. Auto-refreshes if stale."""
     if not _cache["ips"]:
-        refresh(force=True)
+        refresh()
     return _cache["ips"]
 
 
 def get_mailboxes() -> List[Dict]:
     """Return full mailbox objects from /email-accounts/."""
     if not _cache["mailboxes"]:
-        refresh(force=True)
+        refresh()
     return _cache["mailboxes"]
 
 

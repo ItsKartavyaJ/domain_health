@@ -30,16 +30,10 @@ from modules.alerter import send_alert
 
 log = logging.getLogger(__name__)
 
-_shared_client = None
 
-
-def _query(flux: str) -> List[Dict]:
+def _query(flux: str, client) -> List[Dict]:
     """Run a Flux query against InfluxDB and return records as list of dicts."""
     try:
-        client = _shared_client
-        if client is None:
-            from influxdb_client import InfluxDBClient
-            client = InfluxDBClient(url=influx_cfg.url, token=influx_cfg.token, org=influx_cfg.org)
         tables = client.query_api().query(flux, org=influx_cfg.org)
         records = []
         for table in tables:
@@ -57,14 +51,14 @@ def _bucket() -> str:
 
 # ── Per-section query functions ────────────────────────────────────────────
 
-def _rbl_summary() -> Dict:
+def _rbl_summary(client) -> Dict:
     records = _query(f'''
         from(bucket: "{_bucket()}")
           |> range(start: -24h)
           |> filter(fn: (r) => r._measurement == "rbl_check" and r._field == "blacklisted")
           |> last()
           |> filter(fn: (r) => r._value == 1)
-    ''')
+    ''', client)
     blacklisted = [r.get("domain", r.get("_tags", {}).get("domain", "?")) for r in records]
     return {
         "blacklisted_count": len(blacklisted),
@@ -72,7 +66,7 @@ def _rbl_summary() -> Dict:
     }
 
 
-def _dns_summary() -> Dict:
+def _dns_summary(client) -> Dict:
     records = _query(f'''
         from(bucket: "{_bucket()}")
           |> range(start: -48h)
@@ -80,7 +74,7 @@ def _dns_summary() -> Dict:
               and r.record_type == "composite_score"
               and r._field == "score")
           |> last()
-    ''')
+    ''', client)
     if not records:
         return {"avg_dns_score": None, "low_score_domains": []}
 
@@ -95,7 +89,7 @@ def _dns_summary() -> Dict:
     }
 
 
-def _smartlead_summary() -> Dict:
+def _smartlead_summary(client) -> Dict:
     records = _query(f'''
         from(bucket: "{_bucket()}")
           |> range(start: -24h)
@@ -103,7 +97,7 @@ def _smartlead_summary() -> Dict:
               and r.grain == "domain"
               and r._field == "spam_pct")
           |> last()
-    ''')
+    ''', client)
     if not records:
         return {"avg_spam_pct": None, "high_spam_domains": []}
 
@@ -118,14 +112,14 @@ def _smartlead_summary() -> Dict:
     }
 
 
-def _warmup_summary() -> Dict:
+def _warmup_summary(client) -> Dict:
     records = _query(f'''
         from(bucket: "{_bucket()}")
           |> range(start: -24h)
           |> filter(fn: (r) => r._measurement == "warmup_stats"
               and r._field == "health_score")
           |> last()
-    ''')
+    ''', client)
     if not records:
         return {"mailboxes_tracked": 0, "avg_health_score": None, "critical_count": 0}
 
@@ -139,7 +133,7 @@ def _warmup_summary() -> Dict:
     }
 
 
-def _reconnect_summary() -> Dict:
+def _reconnect_summary(client) -> Dict:
     records = _query(f'''
         from(bucket: "{_bucket()}")
           |> range(start: -24h)
@@ -147,21 +141,21 @@ def _reconnect_summary() -> Dict:
               and r._field == "needs_reconnect")
           |> last()
           |> filter(fn: (r) => r._value == 1)
-    ''')
+    ''', client)
     return {
         "needs_reconnect": len(records),
         "accounts": [r.get("email", "?") for r in records[:10]],
     }
 
 
-def _campaign_bounce_summary() -> Dict:
+def _campaign_bounce_summary(client) -> Dict:
     records = _query(f'''
         from(bucket: "{_bucket()}")
           |> range(start: -24h)
           |> filter(fn: (r) => r._measurement == "campaign_bounce"
               and r._field == "bounce_rate")
           |> last()
-    ''')
+    ''', client)
     if not records:
         return {"campaigns_tracked": 0, "high_bounce_count": 0}
 
@@ -179,14 +173,14 @@ def _campaign_bounce_summary() -> Dict:
     }
 
 
-def _postmaster_summary() -> Dict:
+def _postmaster_summary(client) -> Dict:
     records = _query(f'''
         from(bucket: "{_bucket()}")
           |> range(start: -48h)
           |> filter(fn: (r) => r._measurement == "postmaster_metrics"
               and r._field == "domain_reputation")
           |> last()
-    ''')
+    ''', client)
     if not records:
         return {"postmaster_available": False}
 
@@ -208,7 +202,7 @@ def _postmaster_summary() -> Dict:
     }
 
 
-def _spf_summary() -> Dict:
+def _spf_summary(client) -> Dict:
     records = _query(f'''
         from(bucket: "{_bucket()}")
           |> range(start: -48h)
@@ -216,7 +210,7 @@ def _spf_summary() -> Dict:
               and r._field == "authorized")
           |> last()
           |> filter(fn: (r) => r._value == 0)
-    ''')
+    ''', client)
     return {
         "unauthorized_pairs": len(records),
         "affected_domains": list({r.get("domain", "?") for r in records})[:10],
@@ -281,23 +275,18 @@ def run() -> dict:
     log.info("=== Daily Digest assembling ===")
     start = time.time()
 
-    global _shared_client
     from influxdb_client import InfluxDBClient
     with InfluxDBClient(url=influx_cfg.url, token=influx_cfg.token, org=influx_cfg.org) as client:
-        _shared_client = client
-        try:
-            sections = {
-                "rbl":         _rbl_summary(),
-                "dns":         _dns_summary(),
-                "smartlead":   _smartlead_summary(),
-                "warmup":      _warmup_summary(),
-                "reconnect":   _reconnect_summary(),
-                "campaign":    _campaign_bounce_summary(),
-                "postmaster":  _postmaster_summary(),
-                "spf":         _spf_summary(),
-            }
-        finally:
-            _shared_client = None
+        sections = {
+            "rbl":         _rbl_summary(client),
+            "dns":         _dns_summary(client),
+            "smartlead":   _smartlead_summary(client),
+            "warmup":      _warmup_summary(client),
+            "reconnect":   _reconnect_summary(client),
+            "campaign":    _campaign_bounce_summary(client),
+            "postmaster":  _postmaster_summary(client),
+            "spf":         _spf_summary(client),
+        }
 
     overall_score = _overall_health_score(sections)
 

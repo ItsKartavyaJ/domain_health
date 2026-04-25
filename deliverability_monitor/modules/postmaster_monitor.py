@@ -32,6 +32,7 @@ from config.settings import postmaster as pm_cfg, alerts as alert_cfg
 from modules.domain_discovery import get_domains
 from modules.influx_writer import writer
 from modules.alerter import send_alert
+from modules.utils import safe_float
 
 log = logging.getLogger(__name__)
 
@@ -96,12 +97,6 @@ def fetch_traffic_stats(service, domain: str, days_back: int = 3) -> Optional[Di
 
 def parse_traffic_stats(domain: str, stats: Dict) -> Dict:
     """Normalize Postmaster trafficStats into a flat dict."""
-    def _safe_float(val, default=0.0):
-        try:
-            return float(val or default)
-        except (TypeError, ValueError):
-            return default
-
     user_rep = stats.get("userReportedSpamRatio", 0)
     domain_rep = stats.get("domainReputation", "REPUTATION_CATEGORY_UNSPECIFIED")
     ip_rep = stats.get("ipReputations", [{}])

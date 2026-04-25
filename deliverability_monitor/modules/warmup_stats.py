@@ -18,6 +18,7 @@ Called by:       scheduler.py every WARMUP_INTERVAL_HOURS
 """
 
 import logging
+import os
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
@@ -34,7 +35,7 @@ from modules.utils import safe_float as _safe_float, safe_int as _safe_int, heal
 
 log = logging.getLogger(__name__)
 
-MAX_WORKERS = 10
+MAX_WORKERS = int(os.getenv("WARMUP_MAX_WORKERS", "10"))
 
 
 def fetch_warmup_stats(account_id: int) -> Optional[Dict]:

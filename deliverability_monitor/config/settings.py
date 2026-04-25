@@ -28,10 +28,7 @@ def _require_env(name: str) -> str:
 # Used only if Smartlead API is unreachable at startup.
 # Normally domains are auto-discovered via domain_discovery.py.
 SENDING_DOMAINS: List[str] = [
-    "pintel.ai",
-    "launchpintel.com",
-    "gtmpintel.co",
-    # Add fallback domains here ↓
+    # Add fallback domains here — used only if Smartlead API is unreachable at startup.
 ]
 
 # Sending IPs for RBL IP-level checks.

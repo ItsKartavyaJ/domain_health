@@ -37,7 +37,9 @@ def _load_dedup() -> Dict[str, float]:
 def _save_dedup(state: Dict[str, float]) -> None:
     try:
         _DEDUP_FILE.parent.mkdir(parents=True, exist_ok=True)
-        _DEDUP_FILE.write_text(json.dumps(state))
+        tmp = _DEDUP_FILE.with_suffix(".tmp")
+        tmp.write_text(json.dumps(state))
+        os.replace(tmp, _DEDUP_FILE)
     except Exception as e:
         log.warning("Could not persist alert dedup state to %s: %s", _DEDUP_FILE, e)
 

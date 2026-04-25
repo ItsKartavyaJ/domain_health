@@ -38,7 +38,7 @@ def _build_checkers():
 
 
 def check_domains(domain_checker: DNSBLDomainChecker, domains: List[str]) -> List[dict]:
-    """Async check all domains against DNSBL. Returns list of result dicts."""
+    """Check all domains against DNSBL. Returns list of result dicts."""
     results = []
 
     log.info("Checking %d domains against %d DNSBL providers...", len(domains), len(BASE_DOMAIN_PROVIDERS))
@@ -78,7 +78,7 @@ def check_domains(domain_checker: DNSBLDomainChecker, domains: List[str]) -> Lis
 
 
 def check_ips(ip_checker: DNSBLIpChecker, ips: List[str]) -> List[dict]:
-    """Async check all sending IPs against DNSBL."""
+    """Check all sending IPs against DNSBL."""
     results = []
 
     if not ips:

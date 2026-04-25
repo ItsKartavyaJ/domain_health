@@ -16,6 +16,7 @@ Called by:       scheduler.py every CAMPAIGN_BOUNCE_INTERVAL_HOURS
 """
 
 import logging
+import os
 import time
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
@@ -169,7 +170,7 @@ def run() -> dict:
         except Exception as e:
             log.error("Failed to parse campaign %s: %s", campaign_id, e)
 
-        time.sleep(0.2)   # gentle rate limiting
+        time.sleep(float(os.getenv("CAMPAIGN_BOUNCE_DELAY_SECS", "0.2")))   # gentle rate limiting
 
     if points:
         writer.write_points(points)

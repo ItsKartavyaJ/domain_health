@@ -17,7 +17,7 @@ services:
       dockerfile: Dockerfile
     container_name: parsedmarc
     restart: unless-stopped
-    env_file: .env
+    env_file: ../.env
     environment:
       # ── General ──────────────────────────────────────────────────────────
       PARSEDMARC_GENERAL_SAVE_AGGREGATE: "true"
@@ -58,6 +58,14 @@ services:
         condition: service_healthy
     networks:
       - dmarc_net
+    mem_limit: 512m
+    cpus: "0.5"
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "parsedmarc"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     logging:
       driver: "json-file"
       options:
@@ -85,6 +93,14 @@ services:
         condition: service_healthy
     networks:
       - dmarc_net
+    mem_limit: 128m
+    cpus: "0.25"
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "influx_writer"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
     logging:
       driver: "json-file"
       options:
@@ -97,7 +113,7 @@ services:
     container_name: influxdb
     restart: unless-stopped
     ports:
-      - "8086:8086"         # exposed for deliverability_monitor on host
+      - "127.0.0.1:8086:8086"   # localhost only — deliverability_monitor on host
     environment:
       DOCKER_INFLUXDB_INIT_MODE: setup
       DOCKER_INFLUXDB_INIT_USERNAME: "${INFLUXDB_ADMIN_USER}"
@@ -110,6 +126,8 @@ services:
       - influxdb_data:/var/lib/influxdb2
       - influxdb_config:/etc/influxdb2
       - ./influxdb/init:/docker-entrypoint-initdb.d:ro   # optional init scripts
+    mem_limit: 1g
+    cpus: "1.0"
     healthcheck:
       test: ["CMD", "influx", "ping"]
       interval: 10s
@@ -147,6 +165,8 @@ services:
     depends_on:
       influxdb:
         condition: service_healthy
+    mem_limit: 512m
+    cpus: "0.5"
     networks:
       - dmarc_net
     logging:
@@ -170,6 +190,8 @@ services:
     depends_on:
       - grafana
       - influxdb
+    mem_limit: 128m
+    cpus: "0.25"
     networks:
       - dmarc_net
     logging:

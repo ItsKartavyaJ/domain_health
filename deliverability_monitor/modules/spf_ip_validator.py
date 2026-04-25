@@ -182,6 +182,11 @@ def run() -> dict:
     Check all discovered sending IPs against all sending domain SPF records.
     Write results to InfluxDB. Alert on any unauthorized IP.
     """
+    # Clear per-run DNS caches so stale records from prior scheduled runs are not served.
+    _spf_txt_cache.clear()
+    _a_record_cache.clear()
+    _mx_record_cache.clear()
+
     log.info("=== SPF IP Validator run started ===")
     start = time.time()
 

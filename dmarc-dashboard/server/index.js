@@ -9,10 +9,12 @@ import smartleadRouter from './smartlead.js';
 dotenv.config();
 
 const PORT = Number(process.env.API_PORT || 8787);
-const INFLUX_URL = process.env.INFLUX_URL || '';
-const INFLUX_ORG = process.env.INFLUX_ORG || 'pintel';
-const INFLUX_BUCKET = process.env.INFLUX_BUCKET || 'dmarc';
-const INFLUX_TOKEN = process.env.INFLUX_TOKEN || '';
+// Accept both INFLUXDB_* (canonical) and INFLUX_* (legacy) prefixes so a single
+// set of vars in .env works for all three stack components.
+const INFLUX_URL = process.env.INFLUXDB_URL || process.env.INFLUX_URL || '';
+const INFLUX_ORG = process.env.INFLUXDB_ORG || process.env.INFLUX_ORG || 'pintel';
+const INFLUX_BUCKET = process.env.INFLUXDB_DMARC_BUCKET || process.env.INFLUX_BUCKET || 'dmarc';
+const INFLUX_TOKEN = process.env.INFLUXDB_TOKEN || process.env.INFLUX_TOKEN || '';
 const FIREBASE_PROJECT_ID = process.env.FIREBASE_PROJECT_ID || '';
 const ALLOWED_DOMAIN = process.env.ALLOWED_DOMAIN || 'pintel.ai';
 
@@ -21,7 +23,7 @@ const __dirname = path.dirname(__filename);
 const distPath = path.resolve(__dirname, '../dist');
 
 if (!INFLUX_URL || !INFLUX_TOKEN) {
-  throw new Error('Missing INFLUX_URL or INFLUX_TOKEN in environment');
+  throw new Error('Missing InfluxDB URL/token — set INFLUXDB_URL + INFLUXDB_TOKEN (or legacy INFLUX_URL + INFLUX_TOKEN)');
 }
 if (!FIREBASE_PROJECT_ID) {
   throw new Error('Missing FIREBASE_PROJECT_ID in environment');
@@ -38,6 +40,36 @@ if (!getApps().length) {
 const app = express();
 app.use(express.json({ limit: '2kb' }));
 
+// Simple in-memory rate limiter: max 60 requests per user per minute
+const _rateBuckets = new Map();
+const RATE_LIMIT = 60;
+const RATE_WINDOW_MS = 60 * 1000;
+
+function rateLimitMiddleware(req, res, next) {
+  const key = req.user;
+  const now = Date.now();
+  let bucket = _rateBuckets.get(key);
+  if (!bucket || now > bucket.resetAt) {
+    bucket = { count: 0, resetAt: now + RATE_WINDOW_MS };
+    _rateBuckets.set(key, bucket);
+  }
+  bucket.count++;
+  if (bucket.count > RATE_LIMIT) {
+    const retryAfter = Math.ceil((bucket.resetAt - now) / 1000);
+    res.set('Retry-After', String(retryAfter));
+    return res.status(429).json({ error: 'Too many requests' });
+  }
+  next();
+}
+
+// Prune stale buckets every 5 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, bucket] of _rateBuckets) {
+    if (now > bucket.resetAt) _rateBuckets.delete(key);
+  }
+}, 5 * 60 * 1000).unref();
+
 async function authMiddleware(req, res, next) {
   const authHeader = req.headers.authorization || '';
   const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
@@ -46,13 +78,37 @@ async function authMiddleware(req, res, next) {
   try {
     const decoded = await getAuth().verifyIdToken(token);
     if (!decoded.email || !decoded.email.endsWith(`@${ALLOWED_DOMAIN}`)) {
-      return res.status(403).json({ error: 'Access restricted to @pintel.ai accounts' });
+      return res.status(403).json({ error: `Access restricted to @${ALLOWED_DOMAIN} accounts` });
     }
     req.user = decoded.email;
     next();
   } catch {
     return res.status(401).json({ error: 'Unauthorized' });
   }
+}
+
+function parseCsvLine(line) {
+  const values = [];
+  let current = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        current += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (ch === ',' && !inQuotes) {
+      values.push(current);
+      current = '';
+    } else {
+      current += ch;
+    }
+  }
+  values.push(current);
+  return values;
 }
 
 function parseCsv(csvText) {
@@ -63,9 +119,9 @@ function parseCsv(csvText) {
 
   if (lines.length < 2) return [];
 
-  const headers = lines[0].split(',');
+  const headers = parseCsvLine(lines[0]);
   return lines.slice(1).map((line) => {
-    const values = line.split(',');
+    const values = parseCsvLine(line);
     const row = {};
     headers.forEach((h, i) => {
       row[h] = values[i] ?? '';
@@ -77,6 +133,13 @@ function parseCsv(csvText) {
 function toNumber(value) {
   const n = Number(value);
   return Number.isFinite(n) ? n : 0;
+}
+
+class InfluxError extends Error {
+  constructor(status, body) {
+    super(`Influx query failed (${status}): ${body}`);
+    this.status = status;
+  }
 }
 
 async function queryFlux(flux) {
@@ -93,7 +156,7 @@ async function queryFlux(flux) {
 
   if (!response.ok) {
     const body = await response.text();
-    throw new Error(`Influx query failed (${response.status}): ${body}`);
+    throw new InfluxError(response.status, body);
   }
 
   return parseCsv(await response.text());
@@ -156,7 +219,7 @@ from(bucket: "${INFLUX_BUCKET}")
 `);
   } catch (err) {
     // Bucket empty or no dmarc_aggregate data yet — return empty
-    if (err.message.includes('no results') || err.message.includes('404')) {
+    if (err instanceof InfluxError && (err.status === 404 || err.status === 422)) {
       return [];
     }
     throw err;
@@ -217,11 +280,11 @@ function getAlerts(domains) {
     .slice(0, 8);
 }
 
-app.get('/api/auth/me', authMiddleware, (req, res) => {
+app.get('/api/auth/me', authMiddleware, rateLimitMiddleware, (req, res) => {
   return res.json({ ok: true, user: req.user });
 });
 
-app.get('/api/metrics/domain-stats', authMiddleware, async (_req, res) => {
+app.get('/api/metrics/domain-stats', authMiddleware, rateLimitMiddleware, async (_req, res) => {
   try {
     const domains = await getDomainStats();
     return res.json({ ok: true, domains });
@@ -231,7 +294,7 @@ app.get('/api/metrics/domain-stats', authMiddleware, async (_req, res) => {
   }
 });
 
-app.get('/api/metrics/alerts', authMiddleware, async (_req, res) => {
+app.get('/api/metrics/alerts', authMiddleware, rateLimitMiddleware, async (_req, res) => {
   try {
     const domains = await getDomainStats();
     return res.json({ ok: true, alerts: getAlerts(domains) });
@@ -240,8 +303,7 @@ app.get('/api/metrics/alerts', authMiddleware, async (_req, res) => {
   }
 });
 
-
-app.use('/api/smartlead', authMiddleware, smartleadRouter);
+app.use('/api/smartlead', authMiddleware, rateLimitMiddleware, smartleadRouter);
 
 app.use(express.static(distPath));
 app.get('/{*path}', (req, res) => {

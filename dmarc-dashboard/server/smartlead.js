@@ -60,6 +60,24 @@ function slFetch(path, opts = {}) {
   return _slFetch(path, opts);
 }
 
+// Fetch all pages of a paginated endpoint and cache the full combined result
+// under a single key (baseKey) so partial expiry can't yield inconsistent data.
+async function _fetchAllPages(baseKey, pathFn, extractFn, pageSize = 100) {
+  return srvCached(baseKey, async () => {
+    const all = [];
+    let offset = 0;
+    let pageCount = 0;
+    while (pageCount++ < MAX_PAGES) {
+      const raw = await _slFetch(pathFn(offset, pageSize));
+      const page = extractFn(raw);
+      all.push(...page);
+      if (page.length < pageSize) break;
+      offset += pageSize;
+    }
+    return all;
+  });
+}
+
 function dateParams(req, res) {
   const end = req.query.end_date || new Date().toISOString().slice(0, 10);
   const start = req.query.start_date || new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
@@ -186,19 +204,11 @@ router.get('/mailbox-health', async (req, res) => {
     const dates = dateParams(req, res);
     if (!dates) return;
     const { start_date, end_date } = dates;
-    const all = [];
-    let offset = 0;
-    const pageSize = 100;
-    let pageCount = 0;
-    while (pageCount++ < MAX_PAGES) {
-      const raw = await slFetch(
-        `/analytics/mailbox/name-wise-health-metrics?start_date=${start_date}&end_date=${end_date}&full_data=true&limit=${pageSize}&offset=${offset}`
-      );
-      const page = raw?.data?.email_health_metrics || [];
-      all.push(...page);
-      if (page.length < pageSize) break;
-      offset += pageSize;
-    }
+    const all = await _fetchAllPages(
+      `mailbox-health:${start_date}:${end_date}`,
+      (offset, limit) => `/analytics/mailbox/name-wise-health-metrics?start_date=${start_date}&end_date=${end_date}&full_data=true&limit=${limit}&offset=${offset}`,
+      (raw) => raw?.data?.email_health_metrics || [],
+    );
     res.json({ ok: true, data: all.map((m) => ({
       from_email: m.from_email,
       sent: num(m.sent),
@@ -221,19 +231,11 @@ router.get('/domain-health', async (req, res) => {
     const dates = dateParams(req, res);
     if (!dates) return;
     const { start_date, end_date } = dates;
-    const all = [];
-    let offset = 0;
-    const pageSize = 100;
-    let pageCount = 0;
-    while (pageCount++ < MAX_PAGES) {
-      const raw = await slFetch(
-        `/analytics/mailbox/domain-wise-health-metrics?start_date=${start_date}&end_date=${end_date}&full_data=true&limit=${pageSize}&offset=${offset}`
-      );
-      const metrics = raw?.data?.domain_health_metrics || [];
-      all.push(...metrics);
-      if (metrics.length < pageSize) break;
-      offset += pageSize;
-    }
+    const all = await _fetchAllPages(
+      `domain-health:${start_date}:${end_date}`,
+      (offset, limit) => `/analytics/mailbox/domain-wise-health-metrics?start_date=${start_date}&end_date=${end_date}&full_data=true&limit=${limit}&offset=${offset}`,
+      (raw) => raw?.data?.domain_health_metrics || [],
+    );
     res.json({ ok: true, data: all.map((d) => ({
       domain: d.domain,
       sent: num(d.sent),
@@ -285,17 +287,11 @@ router.get('/mailbox-overall', async (req, res) => {
 
 router.get('/email-accounts', async (req, res) => {
   try {
-    const all = [];
-    let offset = 0;
-    const pageSize = 100;
-    let pageCount = 0;
-    while (pageCount++ < MAX_PAGES) {
-      const raw = await slFetch(`/email-accounts?limit=${pageSize}&offset=${offset}`);
-      const page = Array.isArray(raw) ? raw : raw?.data || [];
-      all.push(...page);
-      if (page.length < pageSize) break;
-      offset += pageSize;
-    }
+    const all = await _fetchAllPages(
+      'email-accounts',
+      (offset, limit) => `/email-accounts?limit=${limit}&offset=${offset}`,
+      (raw) => (Array.isArray(raw) ? raw : raw?.data || []),
+    );
     res.json({ ok: true, data: all.map((a) => ({
       id: a.id,
       from_email: a.from_email,
@@ -322,22 +318,11 @@ router.get('/campaign-stats', async (req, res) => {
 
     // Fetch campaign stats and campaign metadata in parallel
     const [statsRaw, metaRaw] = await Promise.all([
-      (async () => {
-        const all = [];
-        let offset = 0;
-        const pageSize = 100;
-        let pageCount = 0;
-        while (pageCount++ < MAX_PAGES) {
-          const raw = await slFetch(
-            `/analytics/campaign/overall-stats?start_date=${start_date}&end_date=${end_date}&full_data=true&limit=${pageSize}&offset=${offset}`
-          );
-          const campaigns = raw?.data?.campaign_wise_performance || [];
-          all.push(...campaigns);
-          if (campaigns.length < pageSize) break;
-          offset += pageSize;
-        }
-        return all;
-      })(),
+      _fetchAllPages(
+        `campaign-stats:${start_date}:${end_date}`,
+        (offset, limit) => `/analytics/campaign/overall-stats?start_date=${start_date}&end_date=${end_date}&full_data=true&limit=${limit}&offset=${offset}`,
+        (raw) => raw?.data?.campaign_wise_performance || [],
+      ),
       slFetch('/analytics/campaign/list'),
     ]);
 
