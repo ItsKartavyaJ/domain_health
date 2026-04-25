@@ -30,22 +30,6 @@ export default function Overview() {
   const [alertsLoading, setAL]        = useState(true);
   const [domainsError, setDE]         = useState(null);
   const [alertsError, setAE]          = useState(null);
-  const [refreshing, setRefreshing]   = useState(false);
-
-  function fetchAll() {
-    setDL(true); setAL(true);
-    setDE(null); setAE(null);
-
-    getDomainStats()
-      .then(setDomains)
-      .catch(() => setDE('Failed to load domain stats.'))
-      .finally(() => setDL(false));
-
-    getAlerts()
-      .then(setAlerts)
-      .catch(() => setAE('Failed to load alerts.'))
-      .finally(() => setAL(false));
-  }
 
   useEffect(() => {
     getDomainStats()
@@ -60,14 +44,21 @@ export default function Overview() {
   }, []);
 
   async function handleRefresh() {
-    setRefreshing(true);
+    setDL(true); setAL(true);
+    setDE(null); setAE(null);
     try {
       await refreshDomainStats();
     } catch {
       // ignore — fetch will still attempt with stale server cache
     }
-    fetchAll();
-    setRefreshing(false);
+    getDomainStats()
+      .then(setDomains)
+      .catch(() => setDE('Failed to load domain stats.'))
+      .finally(() => setDL(false));
+    getAlerts()
+      .then(setAlerts)
+      .catch(() => setAE('Failed to load alerts.'))
+      .finally(() => setAL(false));
   }
 
   const totalEmails = domains.reduce((s, d) => s + d.total, 0);
@@ -86,10 +77,10 @@ export default function Overview() {
         </div>
         <button
           onClick={handleRefresh}
-          disabled={refreshing || domainsLoading}
-          style={{ fontSize: 13, fontWeight: 600, padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)', cursor: refreshing || domainsLoading ? 'not-allowed' : 'pointer', opacity: refreshing || domainsLoading ? 0.6 : 1 }}
+          disabled={domainsLoading}
+          style={{ fontSize: 13, fontWeight: 600, padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)', cursor: domainsLoading ? 'not-allowed' : 'pointer', opacity: domainsLoading ? 0.6 : 1 }}
         >
-          {refreshing ? 'Refreshing…' : '↻ Refresh'}
+          {domainsLoading ? 'Loading…' : '↻ Refresh'}
         </button>
       </div>
 
