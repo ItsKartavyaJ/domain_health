@@ -303,6 +303,12 @@ app.get('/api/metrics/alerts', authMiddleware, rateLimitMiddleware, async (_req,
   }
 });
 
+app.post('/api/metrics/refresh', authMiddleware, rateLimitMiddleware, (_req, res) => {
+  _domainStatsCache = null;
+  _domainStatsCachedAt = 0;
+  return res.json({ ok: true });
+});
+
 app.use('/api/smartlead', authMiddleware, rateLimitMiddleware, smartleadRouter);
 
 app.use(express.static(distPath));

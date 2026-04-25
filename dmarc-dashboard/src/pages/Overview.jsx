@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import DomainCard from '../components/DomainCard';
 import DomainTable from '../components/DomainTable';
-import { getDomainStats, getAlerts } from '../api/influx';
+import { getDomainStats, getAlerts, refreshDomainStats } from '../api/influx';
 
 const dotColor = { red: '#EF4444', amber: '#F59E0B', green: '#22C55E' };
 
@@ -31,17 +31,29 @@ export default function Overview() {
   const [domainsError, setDE]         = useState(null);
   const [alertsError, setAE]          = useState(null);
 
-  useEffect(() => {
+  function fetchData() {
+    setDL(true); setAL(true);
+    setDE(null); setAE(null);
     getDomainStats()
       .then(setDomains)
-      .catch((err) => setDE('Failed to load domain stats.'))
+      .catch(() => setDE('Failed to load domain stats.'))
       .finally(() => setDL(false));
-
     getAlerts()
       .then(setAlerts)
-      .catch((err) => setAE('Failed to load alerts.'))
+      .catch(() => setAE('Failed to load alerts.'))
       .finally(() => setAL(false));
-  }, []);
+  }
+
+  useEffect(() => { fetchData(); }, []);
+
+  async function handleRefresh() {
+    try {
+      await refreshDomainStats();
+    } catch {
+      // cache bust best-effort; still re-fetch
+    }
+    fetchData();
+  }
 
   const totalEmails = domains.reduce((s, d) => s + d.total, 0);
   const avgScore    = domains.length ? Math.round(domains.reduce((s, d) => s + d.score, 0) / domains.length) : 0;
@@ -57,6 +69,13 @@ export default function Overview() {
             {domainsLoading ? 'Loading…' : `${domains.length} domains · last 30 days`}
           </p>
         </div>
+        <button
+          onClick={handleRefresh}
+          disabled={domainsLoading}
+          style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 500, padding: '7px 14px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--card-bg)', color: 'var(--text)', cursor: domainsLoading ? 'not-allowed' : 'pointer', opacity: domainsLoading ? 0.5 : 1 }}
+        >
+          ↻ {domainsLoading ? 'Loading…' : 'Refresh'}
+        </button>
       </div>
 
       {/* Summary stats — shows as soon as domains load */}

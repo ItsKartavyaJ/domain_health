@@ -3,7 +3,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import DateFilter from '../components/DateFilter';
 import Badge from '../components/Badge';
 import { getDomainHealth } from '../api/smartlead';
-import { getDomainStats } from '../api/influx';
+import { getDomainStats, refreshDomainStats } from '../api/influx';
 
 const TODAY = new Date().toISOString().slice(0, 10);
 const THIRTY_DAYS_AGO = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
@@ -100,6 +100,15 @@ export default function Domains() {
     fetchAll(s, e);
   }
 
+  async function handleRefresh() {
+    try {
+      await refreshDomainStats();
+    } catch {
+      // cache bust best-effort; still re-fetch
+    }
+    fetchAll(startDate, endDate);
+  }
+
   function toggleSort(key) {
     setSort((prev) => ({ key, dir: prev.key === key && prev.dir === 'desc' ? 'asc' : 'desc' }));
   }
@@ -135,7 +144,16 @@ export default function Domains() {
             {isLoading ? 'Loading…' : `${merged.length} domains`}
           </p>
         </div>
-        <DateFilter startDate={startDate} endDate={endDate} onChange={onDateChange} />
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <button
+            onClick={handleRefresh}
+            disabled={isLoading}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 500, padding: '7px 14px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--card-bg)', color: 'var(--text)', cursor: isLoading ? 'not-allowed' : 'pointer', opacity: isLoading ? 0.5 : 1 }}
+          >
+            ↻ {isLoading ? 'Loading…' : 'Refresh'}
+          </button>
+          <DateFilter startDate={startDate} endDate={endDate} onChange={onDateChange} />
+        </div>
       </div>
 
       {/* Summary stats */}
