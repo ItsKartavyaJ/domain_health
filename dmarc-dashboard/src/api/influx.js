@@ -1,5 +1,5 @@
 import { getIdToken } from './auth';
-import { cached } from './cache';
+import { cached, invalidate } from './cache';
 
 async function authFetch(url) {
   const token = await getIdToken();
@@ -12,6 +12,16 @@ async function authFetch(url) {
 
 export function getDomainStats() {
   return cached('/api/metrics/domain-stats', () => authFetch('/api/metrics/domain-stats').then((j) => j.domains || []));
+}
+
+export async function refreshDomainStats() {
+  const token = await getIdToken();
+  const res = await fetch('/api/metrics/refresh', {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) throw new Error(`Refresh failed — HTTP ${res.status}`);
+  invalidate('/api/metrics/');
 }
 
 export function getAlerts() {

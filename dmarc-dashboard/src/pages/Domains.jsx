@@ -3,7 +3,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import DateFilter from '../components/DateFilter';
 import Badge from '../components/Badge';
 import { getDomainHealth } from '../api/smartlead';
-import { getDomainStats } from '../api/influx';
+import { getDomainStats, refreshDomainStats } from '../api/influx';
 
 const TODAY = new Date().toISOString().slice(0, 10);
 const THIRTY_DAYS_AGO = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
@@ -73,6 +73,7 @@ export default function Domains() {
 
   const [search, setSearch] = useState('');
   const [sort, setSort]     = useState({ key: 'sent', dir: 'desc' });
+  const [refreshing, setRefreshing] = useState(false);
 
   const fetchId = useRef(0);
 
@@ -102,6 +103,17 @@ export default function Domains() {
 
   function toggleSort(key) {
     setSort((prev) => ({ key, dir: prev.key === key && prev.dir === 'desc' ? 'asc' : 'desc' }));
+  }
+
+  async function handleRefresh() {
+    setRefreshing(true);
+    try {
+      await refreshDomainStats();
+    } catch {
+      // ignore — fetchAll will still attempt with stale server cache
+    }
+    fetchAll(startDate, endDate);
+    setRefreshing(false);
   }
 
   const merged = (!healthLoading && !statsLoading)
@@ -135,7 +147,16 @@ export default function Domains() {
             {isLoading ? 'Loading…' : `${merged.length} domains`}
           </p>
         </div>
-        <DateFilter startDate={startDate} endDate={endDate} onChange={onDateChange} />
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <button
+            onClick={handleRefresh}
+            disabled={refreshing || isLoading}
+            style={{ fontSize: 13, fontWeight: 600, padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)', cursor: refreshing || isLoading ? 'not-allowed' : 'pointer', opacity: refreshing || isLoading ? 0.6 : 1 }}
+          >
+            {refreshing ? 'Refreshing…' : '↻ Refresh'}
+          </button>
+          <DateFilter startDate={startDate} endDate={endDate} onChange={onDateChange} />
+        </div>
       </div>
 
       {/* Summary stats */}

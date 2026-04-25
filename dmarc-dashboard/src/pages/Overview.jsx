@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import DomainCard from '../components/DomainCard';
 import DomainTable from '../components/DomainTable';
-import { getDomainStats, getAlerts } from '../api/influx';
+import { getDomainStats, getAlerts, refreshDomainStats } from '../api/influx';
 
 const dotColor = { red: '#EF4444', amber: '#F59E0B', green: '#22C55E' };
 
@@ -30,18 +30,45 @@ export default function Overview() {
   const [alertsLoading, setAL]        = useState(true);
   const [domainsError, setDE]         = useState(null);
   const [alertsError, setAE]          = useState(null);
+  const [refreshing, setRefreshing]   = useState(false);
 
-  useEffect(() => {
+  function fetchAll() {
+    setDL(true); setAL(true);
+    setDE(null); setAE(null);
+
     getDomainStats()
       .then(setDomains)
-      .catch((err) => setDE('Failed to load domain stats.'))
+      .catch(() => setDE('Failed to load domain stats.'))
       .finally(() => setDL(false));
 
     getAlerts()
       .then(setAlerts)
-      .catch((err) => setAE('Failed to load alerts.'))
+      .catch(() => setAE('Failed to load alerts.'))
+      .finally(() => setAL(false));
+  }
+
+  useEffect(() => {
+    getDomainStats()
+      .then(setDomains)
+      .catch(() => setDE('Failed to load domain stats.'))
+      .finally(() => setDL(false));
+
+    getAlerts()
+      .then(setAlerts)
+      .catch(() => setAE('Failed to load alerts.'))
       .finally(() => setAL(false));
   }, []);
+
+  async function handleRefresh() {
+    setRefreshing(true);
+    try {
+      await refreshDomainStats();
+    } catch {
+      // ignore — fetch will still attempt with stale server cache
+    }
+    fetchAll();
+    setRefreshing(false);
+  }
 
   const totalEmails = domains.reduce((s, d) => s + d.total, 0);
   const avgScore    = domains.length ? Math.round(domains.reduce((s, d) => s + d.score, 0) / domains.length) : 0;
@@ -57,6 +84,13 @@ export default function Overview() {
             {domainsLoading ? 'Loading…' : `${domains.length} domains · last 30 days`}
           </p>
         </div>
+        <button
+          onClick={handleRefresh}
+          disabled={refreshing || domainsLoading}
+          style={{ fontSize: 13, fontWeight: 600, padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)', cursor: refreshing || domainsLoading ? 'not-allowed' : 'pointer', opacity: refreshing || domainsLoading ? 0.6 : 1 }}
+        >
+          {refreshing ? 'Refreshing…' : '↻ Refresh'}
+        </button>
       </div>
 
       {/* Summary stats — shows as soon as domains load */}

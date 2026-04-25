@@ -284,6 +284,13 @@ app.get('/api/auth/me', authMiddleware, rateLimitMiddleware, (req, res) => {
   return res.json({ ok: true, user: req.user });
 });
 
+app.post('/api/metrics/refresh', authMiddleware, rateLimitMiddleware, (_req, res) => {
+  _domainStatsCache = null;
+  _domainStatsCachedAt = 0;
+  _domainStatsInflight = null;
+  return res.json({ ok: true });
+});
+
 app.get('/api/metrics/domain-stats', authMiddleware, rateLimitMiddleware, async (_req, res) => {
   try {
     const domains = await getDomainStats();
