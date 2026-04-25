@@ -82,9 +82,9 @@ npm run start:api     # Prod: serve API + built frontend
 | `spf_ip_validator` | `spf_ip_validation` | 24h |
 
 ### dmarc-dashboard Auth Flow
-- POST `/api/auth/login` validates against `API_AUTH_USER`/`API_AUTH_PASSWORD` env vars
-- Issues JWT signed with `API_JWT_SECRET`, stored in httpOnly `dmarc_auth` cookie (12h)
-- All `/api/metrics/*` and `/api/smartlead/*` routes protected by JWT middleware
+- Firebase Google Sign-In (restricted to `@pintel.ai` via `hd` param hint)
+- Server verifies Firebase ID token via Firebase Admin `verifyIdToken` + email domain check
+- All `/api/metrics/*` and `/api/smartlead/*` routes protected by `authMiddleware` + `rateLimitMiddleware` (60 req/min per user, 429 + `Retry-After` on breach)
 - InfluxDB token never exposed to the browser
 
 ### dmarc-dashboard Pages
@@ -103,17 +103,44 @@ Modules call `alerter.post_alert(event, subject, detail)` → POST JSON to `ALER
 ## Configuration
 
 All secrets live in a single `.env` at the project root. Key variables:
-- `INFLUXDB_TOKEN` — shared across all 3 components (must match)
+
+### InfluxDB (canonical prefix — used by all three components)
+- `INFLUXDB_URL` — e.g. `http://localhost:8086` (deliverability_monitor + dashboard)
+- `INFLUXDB_TOKEN` — shared token (must match across all components)
+- `INFLUXDB_ORG` — InfluxDB org name (default `pintel`)
+- `INFLUXDB_DMARC_BUCKET` — bucket for DMARC data (default `dmarc`)
+- `INFLUXDB_ADMIN_USER` / `INFLUXDB_ADMIN_PASSWORD` — docker-compose init only
+
+> `server/index.js` accepts both `INFLUXDB_*` (preferred) and legacy `INFLUX_*` prefixes.
+
+### Other
 - `SMARTLEAD_API_KEY` — used by `domain_discovery`, `smartlead_health`, `warmup_stats`, `reconnect_monitor`, `campaign_bounce`
 - `DMARC_MAILBOX_USER` / `DMARC_MAILBOX_APP_PASSWORD` — Gmail IMAP for parsedmarc
-- `API_AUTH_USER` / `API_AUTH_PASSWORD` / `API_JWT_SECRET` — dashboard auth
+- `VITE_FIREBASE_API_KEY` / `VITE_FIREBASE_AUTH_DOMAIN` / `VITE_FIREBASE_PROJECT_ID` / `VITE_FIREBASE_APP_ID` — Firebase client (build-time; validated at startup)
+- `FIREBASE_PROJECT_ID` — Firebase Admin (server-side token verification)
+- `ALLOWED_DOMAIN` — email domain allowed to log in (default `pintel.ai`)
 - `ALERT_WEBHOOK_URL` — n8n webhook endpoint
 - `POSTMASTER_CREDENTIALS_PATH` — Google service account JSON (optional; module skips if missing)
 - `DIGEST_HOUR_UTC` — hour for daily digest (default 8)
 
+### Tunable runtime env vars
+| Var | Default | Where used |
+|-----|---------|-----------|
+| `WARMUP_BATCH_DELAY_SECS` | `0.3` | warmup_stats inter-request delay |
+| `WARMUP_MAX_WORKERS` | `10` | warmup_stats thread pool size |
+| `CAMPAIGN_BOUNCE_DELAY_SECS` | `0.2` | campaign_bounce inter-request delay |
+| `CAMPAIGN_BOUNCE_THRESHOLD` | `3.0` | bounce % alert threshold |
+| `PARSEDMARC_MAILBOX_BATCH_SIZE` | `10` | parsedmarc IMAP batch size |
+
 ## Deployment
 
-`setup.sh` at project root handles full deployment: validates `.env`, installs Docker/Node/Python, starts Docker stack, installs Python deps + systemd service, builds React app + installs systemd service, opens firewall ports (3000, 8086, 8787).
+`setup.sh` at project root handles full first-time deployment: validates `.env`, installs Docker/Node/Python, starts Docker stack, installs Python deps + systemd service, builds React app + installs systemd service, opens firewall ports (3000, 8086, 8787).
+
+For subsequent deploys (code changes only):
+```bash
+cd ~/domain_health && bash scripts/redeploy.sh
+```
+Rebuilds parsedmarc Docker image, restarts all containers, reinstalls Python venv, rebuilds React bundle, restarts both systemd services. Data volumes are untouched.
 
 ## Development Notes
 
