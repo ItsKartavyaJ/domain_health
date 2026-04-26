@@ -77,7 +77,7 @@ docker compose up -d --build
 docker compose logs -f parsedmarc    # verify DMARC parsing
 ```
 
-Services started: parsedmarc, influx_writer, InfluxDB (:8086), Grafana (:3000), Caddy (reverse proxy).
+Services started: parsedmarc, InfluxDB (:8086), Grafana (:3000), Caddy (reverse proxy).
 
 ### 3. Start Deliverability Monitor
 
@@ -139,17 +139,18 @@ The deliverability monitor runs 10 modules on scheduled intervals:
 
 | Page | Data Source | Features |
 |------|-------------|----------|
-| **Overview** | InfluxDB | DMARC domain stats, pass-rate alerts |
+| **Overview** | InfluxDB | DMARC domain stats, pass-rate alerts, ↻ force-refresh button |
 | **Replies** | Smartlead API | Reply categories, daily positive trends, per-campaign sentiment |
 | **Mailboxes** | Smartlead API | Health table, domain/provider charts, disconnected account visibility |
 | **Campaigns** | Smartlead API | Funnel chart, daily activity, status filter, search, sortable table |
+| **Domains** | InfluxDB + Smartlead | 11-column table with SPF/DKIM/DMARC stats, historical charts, ↻ force-refresh button |
 | **Sequences** | Smartlead API | Per-campaign sequence performance |
 
 ## InfluxDB Buckets
 
 Two buckets:
 
-- **`dmarc`** — Written by parsedmarc (measurement: `dmarc_aggregate`)
+- **`dmarc`** — Written directly by parsedmarc via its native `[influxdb2]` output (measurement: `dmarc_aggregate`). No intermediate file or sidecar — parsedmarc writes synchronously to InfluxDB per report.
 - **`deliverability`** — Written by deliverability monitor (8 measurements)
 
 ## Alerting

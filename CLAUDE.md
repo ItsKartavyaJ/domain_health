@@ -59,7 +59,7 @@ npm run start:api     # Prod: serve API + built frontend
 ## Architecture
 
 ### Data Flow
-1. `parsedmarc` daemon watches `DMARC@pintel.ai` Gmail inbox → parses DMARC XML reports → writes `aggregate.json` to shared Docker volume (`parsedmarc_data`) → `influx_writer` service reads `/data/aggregate.json` every 30s and writes `dmarc_aggregate` measurement to InfluxDB `dmarc` bucket
+1. `parsedmarc` daemon watches `DMARC@pintel.ai` Gmail inbox → parses DMARC XML reports → writes `dmarc_aggregate` measurement **directly** to InfluxDB `dmarc` bucket via parsedmarc's native `[influxdb2]` output (no intermediate file). No `influx_writer` sidecar.
 2. `deliverability_monitor` scheduler runs 10 modules on 6–24h intervals → writes 8 measurements to InfluxDB `deliverability` bucket
 3. `dmarc-dashboard` Express server (with 90-minute server-side cache) queries InfluxDB via Flux + Smartlead API → serves React SPA on port 8787 with client-side 90-minute cache
 
@@ -95,6 +95,8 @@ npm run start:api     # Prod: serve API + built frontend
 ### dmarc-dashboard Caching Architecture
 - **Client-side cache** (`src/api/cache.js`) — 90-minute TTL in-memory cache with inflight request deduplication; used by all `src/api/smartlead.js` and `src/api/influx.js` functions
 - **Server-side cache** (`server/smartlead.js`) — 90-minute in-process cache on Express for all Smartlead GET endpoints (prevents rate-limiting 500 errors on double-clicks or page revisits)
+- **Server-side InfluxDB cache** (`server/index.js` `getDomainStats`) — 90-minute in-process cache for the Flux domain-stats query; uses a generation counter (`_domainStatsGen`) so an in-flight query that completes after a manual refresh does not re-populate the stale cache
+- **Force-refresh** — `POST /api/metrics/refresh` (auth + rate-limit protected) clears the server cache and increments the generation counter; `refreshDomainStats()` in `src/api/influx.js` calls it then invalidates the client cache; ↻ Refresh button wired on Overview and Domains pages
 - Cache hit detection via headers and metrics API to minimize InfluxDB/Smartlead API calls
 
 ### Alerting
@@ -148,7 +150,7 @@ Rebuilds parsedmarc Docker image, restarts all containers, reinstalls Python ven
 - `deliverability_monitor` accesses InfluxDB inside Docker via the bridge network (`localhost:8086` from the host systemd service)
 - `warmup_stats` has a 0.3s inter-request delay across 164 mailboxes (~50s per run); tunable via env var
 - Postmaster Tools module is optional — silently skips if credentials file not found
-- `parsedmarc_data` Docker volume (`/data` inside container) is shared between `parsedmarc` and `influx_writer` services; `aggregate.json` is written by parsedmarc and read by influx_writer every 30s
+- parsedmarc uses native `[influxdb2]` output (parsedmarc pip extra `influxdb2` installed in Dockerfile); `save_aggregate = False` so no `aggregate.json` file is written — InfluxDB writes are synchronous per-report with no intermediate storage.
 - E2E tests in `dmarc-dashboard/e2e/` cover login, campaigns, mailboxes, and dashboard UX via Playwright
 
 <!-- claude --resume 217c241f-f162-4490-aad3-656c35cccf26   -->

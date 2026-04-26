@@ -1,6 +1,7 @@
 # ── Pintel DMARC Stack ────────────────────────────────────────────────────────
 # Services:
-#   parsedmarc  — parses DMARC reports from Gmail inbox → writes to InfluxDB
+#   parsedmarc  — watches Gmail DMARC inbox, parses XML reports, writes directly
+#                 to InfluxDB v2 via parsedmarc's native [influxdb2] output
 #   influxdb    — time-series DB (shared with deliverability_monitor)
 #   grafana     — DMARC dashboards (your React dashboard reads InfluxDB directly)
 #   caddy       — reverse proxy: dmarc.pintel.ai → Grafana, influx.pintel.ai → InfluxDB
@@ -19,30 +20,23 @@ services:
     restart: unless-stopped
     env_file: ../.env
     environment:
-      # ── General ──────────────────────────────────────────────────────────
-      PARSEDMARC_GENERAL_SAVE_AGGREGATE: "true"
-      PARSEDMARC_GENERAL_SAVE_FORENSIC: "true"
-      PARSEDMARC_GENERAL_SILENT: "false"
-      PARSEDMARC_GENERAL_DEBUG: "false"
-
       # ── Mailbox watch settings ────────────────────────────────────────────
-      PARSEDMARC_MAILBOX_WATCH: "true"
-      PARSEDMARC_MAILBOX_DELETE: "false"          # archive, don't delete
       PARSEDMARC_MAILBOX_BATCH_SIZE: "${PARSEDMARC_MAILBOX_BATCH_SIZE:-10}"
-      PARSEDMARC_MAILBOX_CHECK_TIMEOUT: "30"
       PARSEDMARC_MAILBOX_REPORTS_FOLDER: "INBOX"
       PARSEDMARC_MAILBOX_ARCHIVE_FOLDER: "Archive"
 
       # ── IMAP auth (Gmail app password) ────────────────────────────────────
-      # Enable IMAP in Gmail mailbox settings and use a generated app password.
       PARSEDMARC_IMAP_HOST: "${DMARC_IMAP_HOST}"
       PARSEDMARC_IMAP_PORT: "${DMARC_IMAP_PORT}"
-      PARSEDMARC_IMAP_SSL: "true"
       PARSEDMARC_IMAP_USER: "${DMARC_MAILBOX_USER}"
       PARSEDMARC_IMAP_PASSWORD: "${DMARC_MAILBOX_APP_PASSWORD}"
 
-    volumes:
-      - parsedmarc_data:/data
+      # ── InfluxDB v2 (native output — no influx_writer sidecar needed) ─────
+      INFLUXDB_URL: "http://influxdb:8086"
+      INFLUXDB_ORG: "${INFLUXDB_ORG}"
+      INFLUXDB_TOKEN: "${INFLUXDB_TOKEN}"
+      INFLUXDB_DMARC_BUCKET: "${INFLUXDB_DMARC_BUCKET}"
+
     depends_on:
       influxdb:
         condition: service_healthy
@@ -56,41 +50,6 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-
-  # ── influx_writer ──────────────────────────────────────────────────────────
-  influx_writer:
-    build:
-      context: ./influx_writer
-      dockerfile: Dockerfile
-    container_name: influx_writer
-    restart: unless-stopped
-    environment:
-      INFLUX_URL: "http://influxdb:8086"
-      INFLUX_ORG: "${INFLUXDB_ORG}"
-      INFLUX_TOKEN: "${INFLUXDB_TOKEN}"
-      INFLUX_BUCKET: "${INFLUXDB_DMARC_BUCKET}"
-      AGGREGATE_FILE: "/data/aggregate.json"
-      POLL_INTERVAL: "30"
-    volumes:
-      - parsedmarc_data:/data
-    depends_on:
-      influxdb:
-        condition: service_healthy
-    networks:
-      - dmarc_net
-    mem_limit: 128m
-    cpus: "0.25"
-    healthcheck:
-      test: ["CMD", "pgrep", "-f", "influx_writer"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 15s
     logging:
       driver: "json-file"
       options:
@@ -196,7 +155,6 @@ volumes:
   grafana_data:
   caddy_data:
   caddy_config:
-  parsedmarc_data:
 
 networks:
   dmarc_net:

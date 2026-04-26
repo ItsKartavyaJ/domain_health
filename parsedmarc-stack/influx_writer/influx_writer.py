@@ -124,9 +124,17 @@ def parse_aggregate_json(text: str) -> tuple[list, int]:
     parsedmarc appends JSON arrays of reports to the file.
 
     Returns (reports, consumed_bytes) where consumed_bytes is the number of bytes
-    from the original UTF-8 input that were fully parsed. The caller must advance
-    last_size by consumed_bytes only — not by the full read length — so a
-    partial array at the tail (parsedmarc mid-write) is retried on the next poll.
+    from the original UTF-8 input that were fully parsed or confirmed garbage.
+    The caller must advance last_size by consumed_bytes only — not by the full
+    read length — so a partial array at the tail (parsedmarc mid-write) is
+    retried on the next poll.
+
+    last_good_pos: char pos after the last successfully parsed object.
+    last_safe_pos: char pos up to which bytes are confirmed consumed (parsed or
+                   confirmed garbage). Advances when corrupt bytes are skipped
+                   to a boundary, even if the array at that boundary is still a
+                   partial write. This prevents the read pointer from getting
+                   stuck re-reading the same garbage bytes every poll.
     """
     reports = []
     if not text:
@@ -134,7 +142,8 @@ def parse_aggregate_json(text: str) -> tuple[list, int]:
 
     decoder = json.JSONDecoder()
     pos = 0
-    last_good_pos = 0  # char position after the last successfully parsed object
+    last_good_pos = 0
+    last_safe_pos = 0
     while pos < len(text):
         # Skip whitespace
         while pos < len(text) and text[pos] in " \t\n\r":
@@ -148,6 +157,7 @@ def parse_aggregate_json(text: str) -> tuple[list, int]:
             elif isinstance(obj, dict):
                 reports.append(obj)
             last_good_pos = end
+            last_safe_pos = end
             pos = end
         except json.JSONDecodeError:
             # Skip past corrupt data to the next top-level object boundary.
@@ -160,9 +170,13 @@ def parse_aggregate_json(text: str) -> tuple[list, int]:
                 break
             skipped = next_boundary - pos
             print(f"[WARN] skipped {skipped} corrupt bytes at offset {pos}", flush=True)
+            # Advance last_safe_pos to the boundary so confirmed-garbage bytes
+            # are not re-read next poll, even if the array at next_boundary is
+            # still a partial write.
+            last_safe_pos = next_boundary
             pos = next_boundary
 
-    consumed_bytes = len(text[:last_good_pos].encode("utf-8", errors="replace"))
+    consumed_bytes = len(text[:last_safe_pos].encode("utf-8", errors="replace"))
     return reports, consumed_bytes
 
 
