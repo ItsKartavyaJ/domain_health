@@ -99,7 +99,7 @@ export default function Campaigns() {
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
                   <XAxis type="number" tick={{ fontSize: 10, fill: 'var(--muted)' }} tickLine={false} axisLine={false} />
                   <YAxis dataKey="name" type="category" tick={{ fontSize: 12, fill: 'var(--text)' }} width={70} tickLine={false} axisLine={false} />
-                  <Tooltip contentStyle={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12, padding: '8px 12px' }} cursor={{ fill: 'var(--surface)', opacity: 0.5 }} />
+                  <Tooltip contentStyle={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12, padding: '8px 12px', color: 'var(--text)' }} cursor={{ fill: 'var(--surface)', opacity: 0.5 }} />
                   <Bar dataKey="value" radius={[0, 6, 6, 0]} barSize={28}>
                     {funnelData.map((entry, i) => (
                       <Cell key={i} fill={entry.fill} />
@@ -138,7 +138,7 @@ export default function Campaigns() {
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
                 <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'var(--muted)' }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
                 <YAxis tick={{ fontSize: 10, fill: 'var(--muted)' }} tickLine={false} axisLine={false} width={40} />
-                <Tooltip contentStyle={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12, padding: '8px 12px' }} cursor={{ stroke: 'var(--border)' }} />
+                <Tooltip contentStyle={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12, padding: '8px 12px', color: 'var(--text)' }} cursor={{ stroke: 'var(--border)' }} />
                 <Area type="monotone" dataKey="sent" stroke="#3B82F6" fill="var(--info-bg)" strokeWidth={2} dot={false} activeDot={{ r: 3 }} name="Sent" />
                 <Area type="monotone" dataKey="opened" stroke="#8B5CF6" fill="rgba(139,92,246,0.1)" strokeWidth={2} dot={false} activeDot={{ r: 3 }} name="Opened" />
                 <Area type="monotone" dataKey="replied" stroke="#22C55E" fill="var(--ok-bg)" strokeWidth={2} dot={false} activeDot={{ r: 3 }} name="Replied" />
@@ -184,6 +184,7 @@ export default function Campaigns() {
                 <tr style={{ background: 'var(--surface)' }}>
                   {[
                     { key: 'campaign_name', label: 'Campaign' },
+                    { key: 'status', label: 'Status' },
                     { key: 'sent', label: 'Sent' },
                     { key: 'opened', label: 'Opened' },
                     { key: 'open_rate', label: 'Open Rate' },
@@ -195,8 +196,8 @@ export default function Campaigns() {
                   ].map(({ key, label }) => (
                     <th
                       key={key}
-                      onClick={() => key !== 'campaign_name' && toggleSort(key)}
-                      style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600, padding: '9px 14px', textAlign: 'left', borderBottom: '1px solid var(--border)', textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap', cursor: key !== 'campaign_name' ? 'pointer' : 'default' }}
+                      onClick={() => key !== 'campaign_name' && key !== 'status' && toggleSort(key)}
+                      style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600, padding: '9px 14px', textAlign: 'left', borderBottom: '1px solid var(--border)', textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap', cursor: key !== 'campaign_name' && key !== 'status' ? 'pointer' : 'default' }}
                     >
                       {label}{sort.key === key ? (sort.dir === 'desc' ? ' ▼' : ' ▲') : ''}
                     </th>
@@ -205,11 +206,16 @@ export default function Campaigns() {
               </thead>
               <tbody>
                 {filtered.length === 0 && (
-                  <tr><td colSpan={9} style={{ padding: '32px 18px', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>No campaigns found</td></tr>
+                  <tr><td colSpan={10} style={{ padding: '32px 18px', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>No campaigns found</td></tr>
                 )}
                 {filtered.map((c, i) => (
                   <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
                     <td style={{ padding: '12px 14px', fontSize: 13, fontWeight: 500, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.campaign_name || `Campaign ${c.campaign_id || i}`}</td>
+                    <td style={{ padding: '12px 14px' }}>
+                      <Badge type={c.status === 'ACTIVE' ? 'ok' : c.status === 'PAUSED' ? 'warn' : c.status === 'COMPLETED' ? 'info' : 'err'}>
+                        {c.status || 'UNKNOWN'}
+                      </Badge>
+                    </td>
                     <td style={{ padding: '12px 14px', fontSize: 13 }}>{(c.sent || 0).toLocaleString()}</td>
                     <td style={{ padding: '12px 14px', fontSize: 13 }}>{(c.opened || 0).toLocaleString()}</td>
                     <td style={{ padding: '12px 14px', fontSize: 13 }}>{c.open_rate ? `${Math.round(c.open_rate * 100) / 100}%` : '—'}</td>

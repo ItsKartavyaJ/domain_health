@@ -130,7 +130,7 @@ export default function Sequences() {
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
                     <XAxis dataKey="name" tick={{ fontSize: 12, fill: 'var(--text)' }} tickLine={false} axisLine={false} />
                     <YAxis tick={{ fontSize: 10, fill: 'var(--muted)' }} tickLine={false} axisLine={false} width={40} />
-                    <Tooltip contentStyle={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12, padding: '8px 12px' }} cursor={{ fill: 'var(--surface)', opacity: 0.5 }} />
+                    <Tooltip contentStyle={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12, padding: '8px 12px', color: 'var(--text)' }} cursor={{ fill: 'var(--surface)', opacity: 0.5 }} />
                     <Legend wrapperStyle={{ fontSize: 12 }} />
                     <Bar dataKey="sent" fill="#3B82F6" name="Sent" radius={[4, 4, 0, 0]} barSize={16} />
                     <Bar dataKey="opened" fill="#8B5CF6" name="Opened" radius={[4, 4, 0, 0]} barSize={16} />

@@ -4,7 +4,6 @@ import Overview from './pages/Overview';
 import Replies from './pages/Replies';
 import Mailboxes from './pages/Mailboxes';
 import Campaigns from './pages/Campaigns';
-import Sequences from './pages/Sequences';
 import Domains from './pages/Domains';
 import Login from './pages/Login';
 
@@ -13,7 +12,6 @@ const tabs = [
   { key: 'replies', label: 'Replies' },
   { key: 'mailboxes', label: 'Mailboxes' },
   { key: 'campaigns', label: 'Campaigns' },
-  { key: 'sequences', label: 'Sequences' },
   { key: 'domains', label: 'Domains' },
 ];
 
@@ -29,7 +27,6 @@ const tabComponents = {
   replies: Replies,
   mailboxes: Mailboxes,
   campaigns: Campaigns,
-  sequences: Sequences,
   domains: Domains,
 };
 

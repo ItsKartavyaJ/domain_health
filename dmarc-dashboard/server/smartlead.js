@@ -60,6 +60,19 @@ function slFetch(path, opts = {}) {
   return _slFetch(path, opts);
 }
 
+// Split a date range into ≤30-day chunks (Smartlead health API limit).
+function _chunkDates(start, end) {
+  const chunks = [];
+  let cur = new Date(start);
+  const last = new Date(end);
+  while (cur <= last) {
+    const chunkEnd = new Date(Math.min(cur.getTime() + 29 * 86_400_000, last.getTime()));
+    chunks.push({ start: cur.toISOString().slice(0, 10), end: chunkEnd.toISOString().slice(0, 10) });
+    cur = new Date(chunkEnd.getTime() + 86_400_000);
+  }
+  return chunks;
+}
+
 // Fetch all pages of a paginated endpoint and cache the full combined result
 // under a single key (baseKey) so partial expiry can't yield inconsistent data.
 async function _fetchAllPages(baseKey, pathFn, extractFn, pageSize = 100) {
@@ -103,16 +116,30 @@ router.get('/reply-categories', async (req, res) => {
     const dates = dateParams(req, res);
     if (!dates) return;
     const { start_date, end_date } = dates;
-    const raw = await slFetch(
-      `/analytics/lead/category-wise-response?start_date=${start_date}&end_date=${end_date}`
-    );
-    const groups = raw?.data?.lead_responses_by_category?.leadResponseGrouping || [];
-    res.json({ ok: true, data: groups.map((g) => ({
-      name: g.name,
-      total_response: num(g.total_response),
-      sentiment_type: g.sentiment_type,
-      percentage: parseFloat(g.percentage) || 0,
-    })) });
+    const data = await srvCached(`reply-categories:${start_date}:${end_date}`, async () => {
+      const chunks = _chunkDates(start_date, end_date);
+      const byName = new Map();
+      for (const { start, end } of chunks) {
+        const raw = await _slFetch(
+          `/analytics/lead/category-wise-response?start_date=${start}&end_date=${end}`
+        );
+        const groups = raw?.data?.lead_responses_by_category?.leadResponseGrouping || [];
+        for (const g of groups) {
+          const key = (g.name || '').toLowerCase();
+          if (!byName.has(key)) byName.set(key, { name: g.name, total_response: 0, sentiment_type: g.sentiment_type });
+          byName.get(key).total_response += num(g.total_response);
+        }
+      }
+      const all = [...byName.values()];
+      const grandTotal = all.reduce((s, g) => s + g.total_response, 0);
+      return all.map((g) => ({
+        name: g.name,
+        total_response: g.total_response,
+        sentiment_type: g.sentiment_type,
+        percentage: grandTotal > 0 ? Math.round((g.total_response / grandTotal) * 10000) / 100 : 0,
+      }));
+    });
+    res.json({ ok: true, data });
   } catch (err) {
     console.error('[reply-categories]', err.message);
     res.status(500).json({ error: 'Failed to load reply categories' });
@@ -124,19 +151,27 @@ router.get('/daily-stats', async (req, res) => {
     const dates = dateParams(req, res);
     if (!dates) return;
     const { start_date, end_date } = dates;
-    const raw = await slFetch(
-      `/analytics/day-wise-overall-stats?start_date=${start_date}&end_date=${end_date}`
-    );
-    const stats = raw?.data?.day_wise_stats || [];
-    res.json({ ok: true, data: stats.map((d) => ({
-      date: d.date,
-      day_name: d.day_name,
-      sent: num(d.email_engagement_metrics?.sent),
-      opened: num(d.email_engagement_metrics?.opened),
-      replied: num(d.email_engagement_metrics?.replied),
-      bounced: num(d.email_engagement_metrics?.bounced),
-      unsubscribed: num(d.email_engagement_metrics?.unsubscribed),
-    })) });
+    const data = await srvCached(`daily-stats:${start_date}:${end_date}`, async () => {
+      const chunks = _chunkDates(start_date, end_date);
+      const byDate = new Map();
+      for (const { start, end } of chunks) {
+        const raw = await _slFetch(
+          `/analytics/day-wise-overall-stats?start_date=${start}&end_date=${end}`
+        );
+        for (const d of raw?.data?.day_wise_stats || []) {
+          const key = d.date;
+          if (!byDate.has(key)) byDate.set(key, { date: d.date, day_name: d.day_name, sent: 0, opened: 0, replied: 0, bounced: 0, unsubscribed: 0 });
+          const acc = byDate.get(key);
+          acc.sent += num(d.email_engagement_metrics?.sent);
+          acc.opened += num(d.email_engagement_metrics?.opened);
+          acc.replied += num(d.email_engagement_metrics?.replied);
+          acc.bounced += num(d.email_engagement_metrics?.bounced);
+          acc.unsubscribed += num(d.email_engagement_metrics?.unsubscribed);
+        }
+      }
+      return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
+    });
+    res.json({ ok: true, data });
   } catch (err) {
     console.error('[daily-stats]', err.message);
     res.status(500).json({ error: 'Failed to load daily stats' });
@@ -148,15 +183,22 @@ router.get('/daily-positive-replies', async (req, res) => {
     const dates = dateParams(req, res);
     if (!dates) return;
     const { start_date, end_date } = dates;
-    const raw = await slFetch(
-      `/analytics/day-wise-positive-reply-stats?start_date=${start_date}&end_date=${end_date}`
-    );
-    const stats = raw?.data?.day_wise_stats || [];
-    res.json({ ok: true, data: stats.map((d) => ({
-      date: d.date,
-      day_name: d.day_name,
-      positive_replies: num(d.email_engagement_metrics?.positive_replied),
-    })) });
+    const data = await srvCached(`daily-positive-replies:${start_date}:${end_date}`, async () => {
+      const chunks = _chunkDates(start_date, end_date);
+      const byDate = new Map();
+      for (const { start, end } of chunks) {
+        const raw = await _slFetch(
+          `/analytics/day-wise-positive-reply-stats?start_date=${start}&end_date=${end}`
+        );
+        for (const d of raw?.data?.day_wise_stats || []) {
+          const key = d.date;
+          if (!byDate.has(key)) byDate.set(key, { date: d.date, day_name: d.day_name, positive_replies: 0 });
+          byDate.get(key).positive_replies += num(d.email_engagement_metrics?.positive_replied);
+        }
+      }
+      return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
+    });
+    res.json({ ok: true, data });
   } catch (err) {
     console.error('[daily-positive-replies]', err.message);
     res.status(500).json({ error: 'Failed to load daily positive replies' });
@@ -168,29 +210,45 @@ router.get('/response-stats', async (req, res) => {
     const dates = dateParams(req, res);
     if (!dates) return;
     const { start_date, end_date } = dates;
-    const [respRaw, campRaw] = await Promise.all([
-      slFetch(`/analytics/campaign/response-stats?start_date=${start_date}&end_date=${end_date}&full_data=true`),
-      slFetch(`/analytics/campaign/overall-stats?start_date=${start_date}&end_date=${end_date}&full_data=true&limit=200&offset=0`),
-    ]);
-    const stats = respRaw?.data?.campaign_wise_response_stats || [];
-    const campaigns = campRaw?.data?.campaign_wise_performance || [];
-    const sentMap = {};
-    for (const c of campaigns) {
-      sentMap[String(c.id)] = num(c.sent);
-    }
-    res.json({ ok: true, data: stats.map((c) => {
-      const actualSent = sentMap[String(c.email_campaign_id)] || 0;
-      return {
-        campaign_id: c.email_campaign_id,
-        campaign_name: c.email_campaign_name,
-        total_sent: actualSent,
-        total_replies: num(c.total_response),
-        positive_replies: num(c.total_positive_response),
-        negative_replies: num(c.total_negative_response),
-        neutral_replies: num(c.total_neutral_response),
-        reply_rate: actualSent > 0 ? Math.round((num(c.total_response) / actualSent) * 10000) / 100 : 0,
-      };
-    }) });
+    const data = await srvCached(`response-stats:${start_date}:${end_date}`, async () => {
+      const chunks = _chunkDates(start_date, end_date);
+      const byId = new Map();   // campaign_id → merged response stats
+      const sentById = new Map(); // campaign_id → total sent
+
+      for (const { start, end } of chunks) {
+        const [respRaw, campRaw] = await Promise.all([
+          _slFetch(`/analytics/campaign/response-stats?start_date=${start}&end_date=${end}&full_data=true`),
+          _slFetch(`/analytics/campaign/overall-stats?start_date=${start}&end_date=${end}&full_data=true&limit=200&offset=0`),
+        ]);
+        for (const c of campRaw?.data?.campaign_wise_performance || []) {
+          const id = String(c.id);
+          sentById.set(id, (sentById.get(id) || 0) + num(c.sent));
+        }
+        for (const c of respRaw?.data?.campaign_wise_response_stats || []) {
+          const id = String(c.email_campaign_id);
+          if (!byId.has(id)) byId.set(id, { campaign_id: c.email_campaign_id, campaign_name: c.email_campaign_name, total_replies: 0, positive_replies: 0, negative_replies: 0, neutral_replies: 0 });
+          const acc = byId.get(id);
+          acc.total_replies += num(c.total_response);
+          acc.positive_replies += num(c.total_positive_response);
+          acc.negative_replies += num(c.total_negative_response);
+          acc.neutral_replies += num(c.total_neutral_response);
+        }
+      }
+      return [...byId.values()].map((c) => {
+        const sent = sentById.get(String(c.campaign_id)) || 0;
+        return {
+          campaign_id: c.campaign_id,
+          campaign_name: c.campaign_name,
+          total_sent: sent,
+          total_replies: c.total_replies,
+          positive_replies: c.positive_replies,
+          negative_replies: c.negative_replies,
+          neutral_replies: c.neutral_replies,
+          reply_rate: sent > 0 ? Math.round((c.total_replies / sent) * 10000) / 100 : 0,
+        };
+      });
+    });
+    res.json({ ok: true, data });
   } catch (err) {
     console.error('[response-stats]', err.message);
     res.status(500).json({ error: 'Failed to load response stats' });
@@ -204,22 +262,34 @@ router.get('/mailbox-health', async (req, res) => {
     const dates = dateParams(req, res);
     if (!dates) return;
     const { start_date, end_date } = dates;
-    const all = await _fetchAllPages(
-      `mailbox-health:${start_date}:${end_date}`,
-      (offset, limit) => `/analytics/mailbox/name-wise-health-metrics?start_date=${start_date}&end_date=${end_date}&full_data=true&limit=${limit}&offset=${offset}`,
-      (raw) => raw?.data?.email_health_metrics || [],
-    );
-    res.json({ ok: true, data: all.map((m) => ({
-      from_email: m.from_email,
-      sent: num(m.sent),
-      opened: num(m.opened),
-      replied: num(m.replied),
-      positive_replied: num(m.positive_replied),
-      bounced: num(m.bounced),
-      reply_rate: parseFloat(m.reply_rate) || 0,
-      bounce_rate: parseFloat(m.bounce_rate) || 0,
-      open_rate: parseFloat(m.open_rate) || 0,
-    })) });
+    const data = await srvCached(`mailbox-health:${start_date}:${end_date}`, async () => {
+      const chunks = _chunkDates(start_date, end_date);
+      const byEmail = new Map();
+      for (const { start, end } of chunks) {
+        const page = await _fetchAllPages(
+          `mailbox-health:${start}:${end}`,
+          (offset, limit) => `/analytics/mailbox/name-wise-health-metrics?start_date=${start}&end_date=${end}&full_data=true&limit=${limit}&offset=${offset}`,
+          (raw) => raw?.data?.email_health_metrics || [],
+        );
+        for (const m of page) {
+          const key = (m.from_email || '').toLowerCase();
+          if (!byEmail.has(key)) byEmail.set(key, { from_email: m.from_email, sent: 0, opened: 0, replied: 0, positive_replied: 0, bounced: 0 });
+          const acc = byEmail.get(key);
+          acc.sent += num(m.sent); acc.opened += num(m.opened);
+          acc.replied += num(m.replied); acc.positive_replied += num(m.positive_replied);
+          acc.bounced += num(m.bounced);
+        }
+      }
+      return [...byEmail.values()].map((m) => ({
+        from_email: m.from_email,
+        sent: m.sent, opened: m.opened, replied: m.replied,
+        positive_replied: m.positive_replied, bounced: m.bounced,
+        reply_rate: m.sent > 0 ? Math.round((m.replied / m.sent) * 10000) / 100 : 0,
+        bounce_rate: m.sent > 0 ? Math.round((m.bounced / m.sent) * 10000) / 100 : 0,
+        open_rate: m.sent > 0 ? Math.round((m.opened / m.sent) * 10000) / 100 : 0,
+      }));
+    });
+    res.json({ ok: true, data });
   } catch (err) {
     console.error('[mailbox-health]', err.message);
     res.status(500).json({ error: 'Failed to load mailbox health' });
@@ -231,20 +301,31 @@ router.get('/domain-health', async (req, res) => {
     const dates = dateParams(req, res);
     if (!dates) return;
     const { start_date, end_date } = dates;
-    const all = await _fetchAllPages(
-      `domain-health:${start_date}:${end_date}`,
-      (offset, limit) => `/analytics/mailbox/domain-wise-health-metrics?start_date=${start_date}&end_date=${end_date}&full_data=true&limit=${limit}&offset=${offset}`,
-      (raw) => raw?.data?.domain_health_metrics || [],
-    );
-    res.json({ ok: true, data: all.map((d) => ({
-      domain: d.domain,
-      sent: num(d.sent),
-      opened: num(d.opened),
-      replied: num(d.replied),
-      bounced: num(d.bounced),
-      reply_rate: parseFloat(d.reply_rate) || 0,
-      bounce_rate: parseFloat(d.bounce_rate) || 0,
-    })) });
+    const data = await srvCached(`domain-health:${start_date}:${end_date}`, async () => {
+      const chunks = _chunkDates(start_date, end_date);
+      const byDomain = new Map();
+      for (const { start, end } of chunks) {
+        const page = await _fetchAllPages(
+          `domain-health:${start}:${end}`,
+          (offset, limit) => `/analytics/mailbox/domain-wise-health-metrics?start_date=${start}&end_date=${end}&full_data=true&limit=${limit}&offset=${offset}`,
+          (raw) => raw?.data?.domain_health_metrics || [],
+        );
+        for (const d of page) {
+          const key = (d.domain || '').toLowerCase();
+          if (!byDomain.has(key)) byDomain.set(key, { domain: d.domain, sent: 0, opened: 0, replied: 0, bounced: 0 });
+          const acc = byDomain.get(key);
+          acc.sent += num(d.sent); acc.opened += num(d.opened);
+          acc.replied += num(d.replied); acc.bounced += num(d.bounced);
+        }
+      }
+      return [...byDomain.values()].map((d) => ({
+        domain: d.domain,
+        sent: d.sent, opened: d.opened, replied: d.replied, bounced: d.bounced,
+        reply_rate: d.sent > 0 ? Math.round((d.replied / d.sent) * 10000) / 100 : 0,
+        bounce_rate: d.sent > 0 ? Math.round((d.bounced / d.sent) * 10000) / 100 : 0,
+      }));
+    });
+    res.json({ ok: true, data });
   } catch (err) {
     console.error('[domain-health]', err.message);
     res.status(500).json({ error: 'Failed to load domain health' });
@@ -315,38 +396,49 @@ router.get('/campaign-stats', async (req, res) => {
     const dates = dateParams(req, res);
     if (!dates) return;
     const { start_date, end_date } = dates;
+    const data = await srvCached(`campaign-stats:${start_date}:${end_date}`, async () => {
+      const chunks = _chunkDates(start_date, end_date);
+      const byId = new Map();
 
-    // Fetch campaign stats and campaign metadata in parallel
-    const [statsRaw, metaRaw] = await Promise.all([
-      _fetchAllPages(
-        `campaign-stats:${start_date}:${end_date}`,
-        (offset, limit) => `/analytics/campaign/overall-stats?start_date=${start_date}&end_date=${end_date}&full_data=true&limit=${limit}&offset=${offset}`,
-        (raw) => raw?.data?.campaign_wise_performance || [],
-      ),
-      slFetch('/analytics/campaign/list'),
-    ]);
+      // Fetch campaign metadata once (no date range)
+      const metaRaw = await _slFetch('/analytics/campaign/list');
+      const statusMap = {};
+      for (const camp of metaRaw?.data?.campaign_list || []) {
+        statusMap[String(camp.id)] = camp.status || '';
+      }
 
-    // Build status map from campaign metadata
-    const statusMap = {};
-    const metaList = metaRaw?.data?.campaign_list || [];
-    for (const camp of metaList) {
-      statusMap[String(camp.id)] = camp.status || '';
-    }
+      for (const { start, end } of chunks) {
+        const page = await _fetchAllPages(
+          `campaign-stats-chunk:${start}:${end}`,
+          (offset, limit) => `/analytics/campaign/overall-stats?start_date=${start}&end_date=${end}&full_data=true&limit=${limit}&offset=${offset}`,
+          (raw) => raw?.data?.campaign_wise_performance || [],
+        );
+        for (const c of page) {
+          const id = String(c.id);
+          if (!byId.has(id)) byId.set(id, { id: c.id, campaign_name: c.campaign_name, sent: 0, opened: 0, replied: 0, bounced: 0, positive_replied: 0 });
+          const acc = byId.get(id);
+          acc.sent += num(c.sent); acc.opened += num(c.opened);
+          acc.replied += num(c.replied); acc.bounced += num(c.bounced);
+          acc.positive_replied += num(c.positive_replied);
+        }
+      }
 
-    res.json({ ok: true, data: statsRaw.map((c) => ({
-      campaign_id: c.id,
-      campaign_name: c.campaign_name,
-      status: (statusMap[String(c.id)] || c.status || '').toUpperCase(),
-      sent: num(c.sent),
-      opened: num(c.opened),
-      replied: num(c.replied),
-      bounced: num(c.bounced),
-      positive_replied: num(c.positive_replied),
-      open_rate: parseFloat(c.open_rate) || 0,
-      reply_rate: parseFloat(c.reply_rate) || 0,
-      bounce_rate: parseFloat(c.bounce_rate) || 0,
-      positive_reply_rate: parseFloat(c.positive_reply_rate) || 0,
-    })) });
+      return [...byId.values()].map((c) => ({
+        campaign_id: c.id,
+        campaign_name: c.campaign_name,
+        status: (statusMap[String(c.id)] || '').toUpperCase(),
+        sent: c.sent,
+        opened: c.opened,
+        replied: c.replied,
+        bounced: c.bounced,
+        positive_replied: c.positive_replied,
+        open_rate: c.sent > 0 ? Math.round((c.opened / c.sent) * 10000) / 100 : 0,
+        reply_rate: c.sent > 0 ? Math.round((c.replied / c.sent) * 10000) / 100 : 0,
+        bounce_rate: c.sent > 0 ? Math.round((c.bounced / c.sent) * 10000) / 100 : 0,
+        positive_reply_rate: c.sent > 0 ? Math.round((c.positive_replied / c.sent) * 10000) / 100 : 0,
+      }));
+    });
+    res.json({ ok: true, data });
   } catch (err) {
     console.error('[campaign-stats]', err.message);
     res.status(500).json({ error: 'Failed to load campaign stats' });

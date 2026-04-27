@@ -10,13 +10,52 @@ const Badge = ({ type, children }) => {
   );
 };
 
+const COLS = [
+  { key: 'domain',   label: 'Domain' },
+  { key: 'score',    label: 'Score' },
+  { key: 'rate',     label: 'DMARC pass rate' },
+  { key: 'spf',      label: 'SPF' },
+  { key: 'dkim',     label: 'DKIM' },
+  { key: 'total',    label: 'Emails (48h)' },
+  { key: 'trend',    label: 'Trend' },
+  { key: 'status',   label: 'Status' },
+];
+
+const STATUS_ORDER = { ok: 0, warn: 1, err: 2 };
+const SPF_ORDER    = { Pass: 0, Partial: 1, Fail: 2 };
+const DKIM_ORDER   = { Pass: 0, Fail: 1 };
+
+function colValue(d, key) {
+  switch (key) {
+    case 'domain': return (d.domain || '').toLowerCase();
+    case 'status': return STATUS_ORDER[d.status] ?? 99;
+    case 'spf':    return SPF_ORDER[d.spf] ?? 99;
+    case 'dkim':   return DKIM_ORDER[d.dkim] ?? 99;
+    default:       return d[key] ?? 0;
+  }
+}
+
 export default function DomainTable({ domains }) {
-  const [search, setSearch] = useState('');
-  const filtered = domains.filter(d => d.domain.toLowerCase().includes(search.toLowerCase()));
+  const [search, setSearch]     = useState('');
+  const [sortCol, setSortCol]   = useState('score');
+  const [sortDir, setSortDir]   = useState('desc');
+
+  function handleSort(key) {
+    if (sortCol === key) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    else { setSortCol(key); setSortDir(key === 'domain' ? 'asc' : 'desc'); }
+  }
+
+  const filtered = domains
+    .filter((d) => d.domain.toLowerCase().includes(search.toLowerCase()))
+    .sort((a, b) => {
+      const av = colValue(a, sortCol);
+      const bv = colValue(b, sortCol);
+      if (typeof av === 'string') return sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
+      return sortDir === 'asc' ? av - bv : bv - av;
+    });
 
   return (
     <div style={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
-      {/* Table header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderBottom: '1px solid var(--border)' }}>
         <div>
           <div style={{ fontSize: 14, fontWeight: 600 }}>All domains</div>
@@ -29,7 +68,7 @@ export default function DomainTable({ domains }) {
           <input
             placeholder="Search domains…"
             value={search}
-            onChange={e => setSearch(e.target.value)}
+            onChange={(e) => setSearch(e.target.value)}
             style={{ fontSize: 13, padding: '7px 12px 7px 32px', width: 210, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)' }}
           />
         </div>
@@ -39,8 +78,14 @@ export default function DomainTable({ domains }) {
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ background: 'var(--surface)' }}>
-              {['Domain', 'Score', 'DMARC pass rate', 'SPF', 'DKIM', 'Emails (48h)', 'Trend', 'Status'].map(h => (
-                <th key={h} style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600, padding: '9px 18px', textAlign: 'left', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{h}</th>
+              {COLS.map(({ key, label }) => (
+                <th
+                  key={key}
+                  onClick={() => handleSort(key)}
+                  style={{ fontSize: 11, color: sortCol === key ? 'var(--text)' : 'var(--muted)', fontWeight: 600, padding: '9px 18px', textAlign: 'left', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap', textTransform: 'uppercase', letterSpacing: '0.04em', cursor: 'pointer', userSelect: 'none' }}
+                >
+                  {label}{sortCol === key ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}
+                </th>
               ))}
             </tr>
           </thead>
@@ -48,7 +93,7 @@ export default function DomainTable({ domains }) {
             {filtered.length === 0 && (
               <tr><td colSpan={8} style={{ padding: '32px 18px', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>No domains match your search.</td></tr>
             )}
-            {filtered.map(d => {
+            {filtered.map((d) => {
               const scoreColor = d.status === 'ok' ? 'var(--ok-text)' : d.status === 'warn' ? 'var(--warn-text)' : 'var(--err-text)';
               const barColor   = d.rate > 80 ? '#22C55E' : d.rate > 50 ? '#F59E0B' : '#EF4444';
               return (

@@ -55,6 +55,26 @@ export default function Replies() {
     fetchAll(s, e);
   }
 
+  const [sortCol, setSortCol] = useState('total_replies');
+  const [sortDir, setSortDir] = useState('desc');
+
+  function handleSort(col) {
+    if (sortCol === col) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    else { setSortCol(col); setSortDir('desc'); }
+  }
+
+  const sortedStats = [...responseStats].sort((a, b) => {
+    let av, bv;
+    if (sortCol === 'campaign_name') {
+      av = (a.campaign_name || '').toLowerCase();
+      bv = (b.campaign_name || '').toLowerCase();
+      return sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
+    }
+    av = a[sortCol] ?? 0;
+    bv = b[sortCol] ?? 0;
+    return sortDir === 'asc' ? av - bv : bv - av;
+  });
+
   const totalReplies = categories.reduce((sum, c) => sum + (c.total_response || 0), 0);
 
   return (
@@ -89,7 +109,7 @@ export default function Replies() {
                   ))}
                 </Pie>
                 <Tooltip
-                  contentStyle={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12, padding: '8px 12px' }}
+                  contentStyle={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12, padding: '8px 12px', color: 'var(--text)' }}
                   formatter={(value, name) => [`${value} replies`, name]}
                 />
               </PieChart>
@@ -142,7 +162,7 @@ export default function Replies() {
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
               <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'var(--muted)' }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
               <YAxis tick={{ fontSize: 10, fill: 'var(--muted)' }} tickLine={false} axisLine={false} width={30} allowDecimals={false} />
-              <Tooltip contentStyle={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12, padding: '8px 12px' }} cursor={{ stroke: 'var(--border)' }} />
+              <Tooltip contentStyle={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12, padding: '8px 12px', color: 'var(--text)' }} cursor={{ stroke: 'var(--border)' }} />
               <Area type="monotone" dataKey="positive" stroke="#22C55E" fill="var(--ok-bg)" strokeWidth={2} dot={false} activeDot={{ r: 3 }} name="Positive Replies" />
             </AreaChart>
           </ResponsiveContainer>
@@ -164,13 +184,23 @@ export default function Replies() {
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ background: 'var(--surface)' }}>
-                  {['Campaign', 'Sent', 'Replies', 'Reply Rate', 'Positive', 'Negative', 'Neutral'].map((h) => (
-                    <th key={h} style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600, padding: '9px 18px', textAlign: 'left', borderBottom: '1px solid var(--border)', textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap' }}>{h}</th>
+                  {[
+                    { label: 'Campaign',   col: 'campaign_name' },
+                    { label: 'Sent',       col: 'total_sent' },
+                    { label: 'Replies',    col: 'total_replies' },
+                    { label: 'Reply Rate', col: 'reply_rate' },
+                    { label: 'Positive',   col: 'positive_replies' },
+                    { label: 'Negative',   col: 'negative_replies' },
+                    { label: 'Neutral',    col: 'neutral_replies' },
+                  ].map(({ label, col }) => (
+                    <th key={col} onClick={() => handleSort(col)} style={{ fontSize: 11, color: sortCol === col ? 'var(--text)' : 'var(--muted)', fontWeight: 600, padding: '9px 18px', textAlign: 'left', borderBottom: '1px solid var(--border)', textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap', cursor: 'pointer', userSelect: 'none' }}>
+                      {label}{sortCol === col ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}
+                    </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {responseStats.map((c, i) => (
+                {sortedStats.map((c, i) => (
                   <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
                     <td style={{ padding: '12px 18px', fontSize: 13, fontWeight: 500, maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.campaign_name || `Campaign ${c.campaign_id}`}</td>
                     <td style={{ padding: '12px 18px', fontSize: 13 }}>{(c.total_sent || 0).toLocaleString()}</td>
