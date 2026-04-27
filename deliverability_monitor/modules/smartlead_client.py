@@ -14,14 +14,14 @@ from config.settings import smartlead as sl_cfg
 
 log = logging.getLogger(__name__)
 
-_MAX_RETRIES = 3
-_RETRY_BACKOFF = [1, 3, 9]   # seconds between attempts
+_MAX_RETRIES = 4
+_RETRY_BACKOFF = [5, 15, 45, 90]  # seconds between attempts — generous for 429 rate limits
 
 
 def sl_get(path: str, params: Dict = None) -> Optional[Any]:
     """Authenticated GET to Smartlead API. Returns parsed JSON or None on error.
 
-    Retries up to 3 times with exponential backoff on 429/5xx responses.
+    Retries up to 4 times with exponential backoff on 429/5xx responses.
     """
     base: Dict = {"api_key": sl_cfg.api_key}
     if params:

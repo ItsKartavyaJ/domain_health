@@ -80,7 +80,10 @@ def _fetch_active_domains() -> List[str]:
     result = []
     for row in rows:
         if isinstance(row, str):
-            if row:
+            # Skip non-domain strings (e.g. Smartlead API key names like
+            # "domain_health_metrics" that appear as the first list element).
+            # A valid domain must contain at least one dot.
+            if row and "." in row:
                 result.append(row)
         elif isinstance(row, dict) and row.get("domain"):
             result.append(str(row["domain"]))

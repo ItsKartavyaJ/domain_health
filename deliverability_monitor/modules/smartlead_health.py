@@ -138,6 +138,9 @@ def run() -> dict:
     if domain_rows:
         log.info("Fetched %d domain-wise rows from Smartlead", len(domain_rows))
         for raw in domain_rows:
+            if not isinstance(raw, dict):
+                log.debug("Skipping non-dict domain row: %r", raw)
+                continue
             try:
                 row = parse_domain_row(raw)
                 points.append(writer.smartlead_domain_point(**row))
@@ -160,6 +163,9 @@ def run() -> dict:
     if mailbox_rows:
         log.info("Fetched %d name-wise rows from Smartlead", len(mailbox_rows))
         for raw in mailbox_rows:
+            if not isinstance(raw, dict):
+                log.debug("Skipping non-dict mailbox row: %r", raw)
+                continue
             try:
                 row = parse_mailbox_row(raw)
                 points.append(writer.smartlead_mailbox_point(**row))
