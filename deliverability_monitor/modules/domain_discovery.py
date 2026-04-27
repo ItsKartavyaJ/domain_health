@@ -17,6 +17,7 @@ Results are cached in module-level state and refreshed every 6h by the scheduler
 """
 
 import logging
+import re
 import time
 from typing import Dict, List, Optional, Set, Tuple
 from datetime import date, timedelta
@@ -27,6 +28,17 @@ from config.settings import smartlead as sl_cfg, SENDING_DOMAINS, SENDING_IPS
 from modules.smartlead_client import sl_get
 
 log = logging.getLogger(__name__)
+
+# Regex for a valid hostname / domain name (labels separated by dots, no
+# underscores, each label 1–63 chars, at least two labels required).
+_DOMAIN_RE = re.compile(
+    r'^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?'
+    r'(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$'
+)
+
+
+def _is_valid_domain(value: str) -> bool:
+    return bool(_DOMAIN_RE.match(value))
 
 # ── Module-level cache ─────────────────────────────────────────────────────
 _cache: Dict = {
@@ -82,8 +94,7 @@ def _fetch_active_domains() -> List[str]:
         if isinstance(row, str):
             # Skip non-domain strings (e.g. Smartlead API key names like
             # "domain_health_metrics" that appear as the first list element).
-            # A valid domain must contain at least one dot.
-            if row and "." in row:
+            if _is_valid_domain(row):
                 result.append(row)
         elif isinstance(row, dict) and row.get("domain"):
             result.append(str(row["domain"]))
