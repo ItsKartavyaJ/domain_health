@@ -185,53 +185,49 @@ def main() -> None:
     print(f"[INFO] influx -> {INFLUX_URL} org={INFLUX_ORG} bucket={INFLUX_BUCKET}", flush=True)
 
     processed_ids = BoundedIdSet()
-
-    # On startup, skip existing content — it was already written to InfluxDB in
-    # previous runs. Reading the whole file would OOM the container on large files.
-    last_size = AGGREGATE_FILE.stat().st_size if AGGREGATE_FILE.exists() else 0
-    print(f"[INFO] skipping {last_size} existing bytes — watching for new appends", flush=True)
+    print("[INFO] full-file scan mode enabled; report IDs are deduped in memory", flush=True)
 
     while True:
         try:
             if AGGREGATE_FILE.exists():
                 current_size = AGGREGATE_FILE.stat().st_size
-                if current_size < last_size:
-                    print(f"[WARN] file shrank ({last_size} → {current_size} bytes) — resetting read position", flush=True)
-                    last_size = 0
-                elif current_size > last_size:
-                    read_end = min(last_size + MAX_READ_BYTES, current_size)
-                    with open(AGGREGATE_FILE, "rb") as f:
-                        f.seek(last_size)
-                        new_bytes = f.read(read_end - last_size)
-                    reports, consumed = parse_aggregate_json(new_bytes.decode("utf-8", errors="replace"))
+                if current_size > MAX_READ_BYTES:
+                    print(
+                        f"[WARN] aggregate file is {current_size} bytes; "
+                        f"reading first {MAX_READ_BYTES} bytes this poll",
+                        flush=True,
+                    )
+                with open(AGGREGATE_FILE, "rb") as f:
+                    new_bytes = f.read(MAX_READ_BYTES)
+                reports, consumed = parse_aggregate_json(new_bytes.decode("utf-8", errors="replace"))
 
-                    pending_keys = []
-                    new_lines = []
-                    new_count = 0
-                    for report in reports:
-                        key = _report_key(report)
-                        if key in processed_ids:
-                            continue
-                        lines = report_to_lines(report)
-                        new_lines.extend(lines)
-                        pending_keys.append(key)
-                        new_count += 1
+                pending_keys = []
+                new_lines = []
+                new_count = 0
+                for report in reports:
+                    key = _report_key(report)
+                    if key in processed_ids:
+                        continue
+                    lines = report_to_lines(report)
+                    new_lines.extend(lines)
+                    pending_keys.append(key)
+                    new_count += 1
 
-                    if new_lines:
-                        write_to_influx(new_lines)
-                        for key in pending_keys:
-                            processed_ids.add(key)
-                        print(f"[OK] wrote {len(new_lines)} points from {new_count} new reports", flush=True)
-                    elif new_count:
-                        # Reports parsed OK but had no records — mark as seen so
-                        # they are not re-checked on every subsequent poll.
-                        for key in pending_keys:
-                            processed_ids.add(key)
-                        print(f"[INFO] {new_count} empty reports marked as processed", flush=True)
-
-                    # Only advance by fully-parsed bytes so a partial write at the
-                    # tail is retried on the next poll rather than permanently skipped.
-                    last_size = last_size + consumed
+                if new_lines:
+                    write_to_influx(new_lines)
+                    for key in pending_keys:
+                        processed_ids.add(key)
+                    print(f"[OK] wrote {len(new_lines)} points from {new_count} new reports", flush=True)
+                elif new_count:
+                    # Reports parsed OK but had no records; mark them so they are
+                    # not rechecked on every subsequent poll.
+                    for key in pending_keys:
+                        processed_ids.add(key)
+                    print(f"[INFO] {new_count} empty reports marked as processed", flush=True)
+                elif reports:
+                    print(f"[INFO] {len(reports)} reports already processed", flush=True)
+                elif consumed == 0 and current_size:
+                    print("[WARN] aggregate file has no complete JSON object yet", flush=True)
         except urllib.error.HTTPError as exc:
             print(f"[ERROR] InfluxDB {exc.code}: {exc.read()}", flush=True)
         except Exception as exc:
