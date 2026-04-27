@@ -22,6 +22,12 @@ dist-ssr/
 *.log
 logs/
 
+# Graphify generated files
+.graphify_*
+graphify-out/
+run_ast.py
+run_cache_check.py
+
 # Docker / InfluxDB / Grafana data
 parsedmarc-stack/influxdb/data/
 parsedmarc-stack/grafana/data/
