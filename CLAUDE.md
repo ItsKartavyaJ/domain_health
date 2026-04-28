@@ -10,7 +10,7 @@ A self-hosted email deliverability and DMARC monitoring stack deployed on a GCP 
 
 | Component | Tech | Purpose |
 |-----------|------|---------|
-| `parsedmarc-stack/` | Docker (Python + Grafana + Caddy) | Watches Gmail DMARC mailbox, parses XML reports, writes to InfluxDB |
+| `parsedmarc-stack/` | Docker (Python + InfluxDB + Caddy) | Watches Gmail DMARC mailbox, parses XML reports, writes aggregate JSON for the sidecar writer |
 | `deliverability_monitor/` | Python systemd daemon | Scheduled checks: DNS, blacklists, Smartlead health, warmup, bounce, postmaster |
 | `dmarc-dashboard/` | React 19 + Express 5 | Auth-protected dashboard that reads InfluxDB DMARC data |
 
@@ -59,7 +59,7 @@ npm run start:api     # Prod: serve API + built frontend
 ## Architecture
 
 ### Data Flow
-1. `parsedmarc` daemon watches `DMARC@pintel.ai` Gmail inbox → parses DMARC XML reports → writes `dmarc_aggregate` measurement **directly** to InfluxDB `dmarc` bucket via parsedmarc's native `[influxdb2]` output (no intermediate file). No `influx_writer` sidecar.
+1. `parsedmarc` runs once per `PARSEDMARC_RUN_INTERVAL_SECONDS` (default 3600) → parses DMARC XML reports from `DMARC@pintel.ai` → writes `/data/aggregate.json`; the `influx_writer` sidecar tails that file, writes `dmarc_aggregate` points to InfluxDB `dmarc` bucket, then compacts safely processed bytes out of `aggregate.json`.
 2. `deliverability_monitor` scheduler runs 10 modules on 6–24h intervals → writes 8 measurements to InfluxDB `deliverability` bucket
 3. `dmarc-dashboard` Express server (with 90-minute server-side cache) queries InfluxDB via Flux + Smartlead API → serves React SPA on port 8787 with client-side 90-minute cache
 
@@ -133,10 +133,11 @@ All secrets live in a single `.env` at the project root. Key variables:
 | `CAMPAIGN_BOUNCE_DELAY_SECS` | `0.2` | campaign_bounce inter-request delay |
 | `CAMPAIGN_BOUNCE_THRESHOLD` | `3.0` | bounce % alert threshold |
 | `PARSEDMARC_MAILBOX_BATCH_SIZE` | `10` | parsedmarc IMAP batch size |
+| `PARSEDMARC_RUN_INTERVAL_SECONDS` | `3600` | parsedmarc one-shot run interval |
 
 ## Deployment
 
-`setup.sh` at project root handles full first-time deployment: validates `.env`, installs Docker/Node/Python, starts Docker stack, installs Python deps + systemd service, builds React app + installs systemd service, opens firewall ports (3000, 8086, 8787).
+`setup.sh` at project root handles full first-time deployment: validates `.env`, installs Docker/Node/Python, starts Docker stack, installs Python deps + systemd service, builds React app + installs systemd service, opens firewall ports (8086, 8787).
 
 For subsequent deploys (code changes only):
 ```bash
@@ -150,7 +151,7 @@ Rebuilds parsedmarc Docker image, restarts all containers, reinstalls Python ven
 - `deliverability_monitor` accesses InfluxDB inside Docker via the bridge network (`localhost:8086` from the host systemd service)
 - `warmup_stats` has a 0.3s inter-request delay across 164 mailboxes (~50s per run); tunable via env var
 - Postmaster Tools module is optional — silently skips if credentials file not found
-- parsedmarc uses native `[influxdb2]` output (parsedmarc pip extra `influxdb2` installed in Dockerfile); `save_aggregate = False` so no `aggregate.json` file is written — InfluxDB writes are synchronous per-report with no intermediate storage.
+- parsedmarc uses the sidecar path: `save_aggregate = True` writes `/data/aggregate.json`, and `influx_writer` converts completed aggregate reports into InfluxDB line protocol.
 - E2E tests in `dmarc-dashboard/e2e/` cover login, campaigns, mailboxes, and dashboard UX via Playwright
 
 <!-- claude --resume 217c241f-f162-4490-aad3-656c35cccf26   -->

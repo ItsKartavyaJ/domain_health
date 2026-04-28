@@ -1,84 +1,52 @@
-# Diagnostic Steps to Find the 8-Domain Bottleneck
+# Diagnostic Steps for DMARC Domain Counts
 
-After the latest fixes (Flux query improvements + InfluxDB v2 config), use these steps to identify where data is being lost.
+Use these checks when the dashboard shows fewer DMARC domains than expected.
 
-## 1. Test the Fixed Diagnostic Endpoint
-
-```bash
-# SSH to VM, then:
-curl http://localhost:8787/api/debug/influx-cardinality 2>/dev/null | jq
-```
-
-**What to look for:**
-- `unique_domain_count`: How many distinct domains are in InfluxDB?
-  - If still 8 → parsedmarc's direct write isn't working
-  - If > 8 → data IS in InfluxDB, Overview will show it after refresh
-- `total_records`: Total DMARC_aggregate records in InfluxDB
-
-## 2. Check aggregate.json Content
+## 1. Check aggregate.json Content
 
 ```bash
-# See how many unique domains in the file
+docker exec parsedmarc sh -c 'ls -lh /data && du -h /data/* 2>/dev/null'
 docker exec parsedmarc sh -c 'cat /data/aggregate.json | jq -r ".[].policy_published.domain" | sort -u | wc -l'
-
-# Or just count lines if it's line-delimited JSON
-wc -l /data/aggregate.json
 ```
 
-## 3. Check parsedmarc Logs for InfluxDB Errors
+If `aggregate.json` is not growing, inspect parsedmarc logs and the DMARC mailbox.
+
+## 2. Check parsedmarc Logs
 
 ```bash
-docker logs parsedmarc 2>&1 | grep -i -E "influx|error|failed" | tail -30
+docker logs parsedmarc 2>&1 | grep -i -E "imap|error|failed|archive|report" | tail -50
 ```
 
-Look for:
-- "writing to influxdb" (success indicator)
-- Connection errors
-- Write failures
+In the current sidecar setup, parsedmarc writes files only. It does not write directly to InfluxDB.
 
-## 4. Check influx_writer Progress
+## 3. Check influx_writer Progress
 
 ```bash
 docker logs influx_writer 2>&1 | tail -50
 ```
 
 Look for:
-- `[OK] wrote X points from Y new reports` → it's processing new data
-- `[ERROR] InfluxDB` → write failures
-- Check if it's seeing NEW reports beyond the initial 8
 
-## 5. Rebuild and Redeploy Dashboard
+- `[OK] wrote X points from Y new reports`
+- `compacted aggregate file`
+- `[ERROR] InfluxDB`
+- warnings about corrupt or partial JSON at the tail
+
+## 4. Query InfluxDB Directly
+
+Open `http://localhost:8086` on the VM or query with the CLI:
 
 ```bash
-cd dmarc-dashboard
-npm run build
-docker compose up -d dmarc-dashboard  # or wherever the dashboard is deployed
+docker exec influxdb influx query \
+  --org "$INFLUXDB_ORG" --token "$INFLUXDB_TOKEN" \
+  'from(bucket:"dmarc") |> range(start:-30d) |> filter(fn: (r) => r._measurement == "dmarc_aggregate") |> keep(columns:["header_from"]) |> distinct(column:"header_from")'
 ```
-
-Then refresh the browser at `http://localhost:8787`.
-
-## 6. Query InfluxDB Directly (via Grafana or UI)
-
-Navigate to `http://localhost:3000` (Grafana) or `http://localhost:8086` (InfluxDB UI) and run a Flux query:
-
-```flux
-from(bucket: "dmarc")
-  |> range(start: -30d)
-  |> filter(fn: (r) => r._measurement == "dmarc_aggregate")
-  |> keep(columns: ["header_from"])
-  |> distinct(column: "header_from")
-```
-
-Count the results to see unique domains.
 
 ## Expected Flow
 
-1. **parsedmarc** reads Gmail → processes reports → writes to:
-   - `/data/aggregate.json` (always)
-   - InfluxDB directly (after ccfd25a fix)
+1. `parsedmarc` reads Gmail and writes `/data/aggregate.json`.
+2. `influx_writer` reads that file every 30 seconds and writes new reports to InfluxDB.
+3. After successful writes, `influx_writer` compacts the processed prefix out of `aggregate.json`.
+4. The dashboard API queries InfluxDB and returns domains.
 
-2. **influx_writer** reads aggregate.json every 30s → writes new reports to InfluxDB
-
-3. **Dashboard API** queries InfluxDB → returns domains
-
-If only 8 domains in InfluxDB after all these steps → issue is in parsedmarc's InfluxDB write or environment config.
+If domains are present in `aggregate.json` but missing from InfluxDB, focus on `influx_writer`. If domains are present in InfluxDB but missing from the dashboard, focus on the dashboard API cache/query.

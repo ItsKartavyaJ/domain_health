@@ -2,7 +2,7 @@
 
 This guide deploys all 3 projects together on one GCP VM:
 
-- `parsedmarc-stack` (Docker: parsedmarc, InfluxDB, Grafana, Caddy)
+- `parsedmarc-stack` (Docker: parsedmarc, influx_writer, InfluxDB, Caddy)
 - `deliverability_monitor` (Python service via systemd)
 - `dmarc-dashboard` (protected login UI + API via systemd)
 
@@ -28,7 +28,6 @@ This setup works directly with your VM public IP.
 
 You will access:
 
-- Grafana: `http://<VM_PUBLIC_IP>:3000`
 - InfluxDB: `http://<VM_PUBLIC_IP>:8086`
 - Dashboard: `http://<VM_PUBLIC_IP>:8787`
 
@@ -68,7 +67,7 @@ What this script does:
 
 - installs Docker, Docker Compose, Node.js, Python dependencies
 - reads configuration from the global `.env`
-- starts `parsedmarc-stack` containers (parsedmarc + influxdb + grafana)
+- starts `parsedmarc-stack` containers (parsedmarc + influx_writer + influxdb + caddy)
 - enables `deliverability_monitor` as systemd service
 - builds and runs `dmarc-dashboard` API/UI as systemd service
 - uses IP + ports directly (no domain or Caddy required)
@@ -99,7 +98,6 @@ systemctl status dmarc_dashboard_api
 
 Open in browser:
 
-- `http://<VM_PUBLIC_IP>:3000` (Grafana)
 - `http://<VM_PUBLIC_IP>:8787` (login-protected dashboard)
 - `http://<VM_PUBLIC_IP>:8086` (Influx API endpoint)
 

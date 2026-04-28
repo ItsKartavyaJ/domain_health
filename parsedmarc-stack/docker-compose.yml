@@ -1,10 +1,9 @@
 # Pintel DMARC Stack
 # Services:
-#   parsedmarc     - watches Gmail DMARC inbox and writes reports to /data/aggregate.json
+#   parsedmarc     - checks Gmail DMARC inbox on a schedule and writes reports to /data/aggregate.json
 #   influx_writer  - tails aggregate.json and writes DMARC points to InfluxDB
 #   influxdb       - time-series DB shared with deliverability_monitor
-#   grafana        - DMARC dashboards
-#   caddy          - reverse proxy for Grafana and InfluxDB
+#   caddy          - reverse proxy for InfluxDB
 #
 # All data is persisted in named Docker volumes.
 # Run: docker compose up -d
@@ -19,6 +18,9 @@ services:
     env_file: ../.env
     environment:
       PARSEDMARC_MAILBOX_BATCH_SIZE: "${PARSEDMARC_MAILBOX_BATCH_SIZE:-10}"
+      PARSEDMARC_RUN_INTERVAL_SECONDS: "${PARSEDMARC_RUN_INTERVAL_SECONDS:-3600}"
+      AGGREGATE_LOCK_DIR: "/data/aggregate.lock"
+      PARSEDMARC_HEARTBEAT_FILE: "/tmp/parsedmarc.heartbeat"
       PARSEDMARC_MAILBOX_REPORTS_FOLDER: "INBOX"
       PARSEDMARC_MAILBOX_ARCHIVE_FOLDER: "Archive"
       PARSEDMARC_IMAP_HOST: "${DMARC_IMAP_HOST}"
@@ -37,7 +39,7 @@ services:
     mem_limit: 512m
     cpus: "0.5"
     healthcheck:
-      test: ["CMD", "pgrep", "-f", "parsedmarc"]
+      test: ["CMD-SHELL", "test -f /tmp/parsedmarc.heartbeat && find /tmp/parsedmarc.heartbeat -mmin -180 | grep -q ."]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -61,6 +63,7 @@ services:
       INFLUX_TOKEN: "${INFLUXDB_TOKEN}"
       INFLUX_BUCKET: "${INFLUXDB_DMARC_BUCKET}"
       AGGREGATE_FILE: "/data/aggregate.json"
+      AGGREGATE_LOCK_DIR: "/data/aggregate.lock"
       POLL_INTERVAL: "30"
     volumes:
       - parsedmarc_data:/data
@@ -111,37 +114,6 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  grafana:
-    image: grafana/grafana:10.4.0
-    container_name: grafana
-    restart: unless-stopped
-    ports:
-      - "3000:3000"
-    environment:
-      GF_SERVER_ROOT_URL: "${GRAFANA_ROOT_URL:-http://localhost:3000}"
-      GF_SERVER_DOMAIN: "${GRAFANA_DOMAIN:-localhost}"
-      GF_SECURITY_ADMIN_USER: "${GRAFANA_ADMIN_USER}"
-      GF_SECURITY_ADMIN_PASSWORD: "${GRAFANA_ADMIN_PASSWORD}"
-      GF_USERS_ALLOW_SIGN_UP: "false"
-      GF_AUTH_ANONYMOUS_ENABLED: "false"
-      GF_INSTALL_PLUGINS: "grafana-worldmap-panel,grafana-piechart-panel"
-      GF_DATASOURCES_DEFAULT_ORG: "${INFLUXDB_ORG}"
-    volumes:
-      - grafana_data:/var/lib/grafana
-      - ./grafana/provisioning:/etc/grafana/provisioning:ro
-    depends_on:
-      influxdb:
-        condition: service_healthy
-    mem_limit: 512m
-    cpus: "0.5"
-    networks:
-      - dmarc_net
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-
   caddy:
     image: caddy:2-alpine
     container_name: caddy
@@ -154,7 +126,6 @@ services:
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
-      - grafana
       - influxdb
     mem_limit: 128m
     cpus: "0.25"
@@ -169,7 +140,6 @@ services:
 volumes:
   influxdb_data:
   influxdb_config:
-  grafana_data:
   caddy_data:
   caddy_config:
   parsedmarc_data:

@@ -20,9 +20,12 @@ INFLUX_ORG = os.environ.get("INFLUX_ORG", "pintel")
 INFLUX_TOKEN = os.environ.get("INFLUX_TOKEN", "")
 INFLUX_BUCKET = os.environ.get("INFLUX_BUCKET", "dmarc")
 AGGREGATE_FILE = Path(os.environ.get("AGGREGATE_FILE", "/data/aggregate.json"))
+AGGREGATE_LOCK_DIR = Path(os.environ.get("AGGREGATE_LOCK_DIR", "/data/aggregate.lock"))
 POLL_INTERVAL = int(os.environ.get("POLL_INTERVAL", "30"))
 MAX_PROCESSED_IDS = 10_000
 MAX_READ_BYTES = 50 * 1024 * 1024  # 50 MB per poll — prevents OOM on large backlogs
+COMPACT_CHUNK_BYTES = 1024 * 1024
+COMPACT_STABILITY_SECONDS = 0.2
 
 
 class BoundedIdSet:
@@ -180,12 +183,69 @@ def parse_aggregate_json(text: str) -> tuple[list, int]:
     return reports, consumed_bytes
 
 
+def compact_processed_prefix(consumed_bytes: int, original_size: int) -> None:
+    """Remove the safely consumed prefix from aggregate.json."""
+    if consumed_bytes <= 0 or not AGGREGATE_FILE.exists():
+        return
+
+    try:
+        AGGREGATE_LOCK_DIR.mkdir()
+    except FileExistsError:
+        print("[INFO] aggregate lock is held; deferring cleanup", flush=True)
+        return
+
+    try:
+        first_stat = AGGREGATE_FILE.stat()
+        time.sleep(COMPACT_STABILITY_SECONDS)
+        second_stat = AGGREGATE_FILE.stat()
+        if (
+            first_stat.st_size != second_stat.st_size
+            or first_stat.st_mtime_ns != second_stat.st_mtime_ns
+        ):
+            print("[INFO] aggregate file changed during compaction check; deferring cleanup", flush=True)
+            return
+
+        current_size = second_stat.st_size
+        if current_size < consumed_bytes:
+            print("[WARN] aggregate file shrank before compaction; skipping cleanup", flush=True)
+            return
+
+        if current_size != original_size:
+            print("[INFO] aggregate file size changed since read; deferring cleanup", flush=True)
+            return
+
+        with open(AGGREGATE_FILE, "rb+") as f:
+            read_pos = consumed_bytes
+            write_pos = 0
+            while True:
+                f.seek(read_pos)
+                chunk = f.read(COMPACT_CHUNK_BYTES)
+                if not chunk:
+                    break
+                read_pos += len(chunk)
+                f.seek(write_pos)
+                f.write(chunk)
+                write_pos += len(chunk)
+            f.truncate(write_pos)
+
+        remaining = current_size - consumed_bytes
+        print(
+            f"[INFO] compacted aggregate file; removed {consumed_bytes} bytes, kept {remaining} tail bytes",
+            flush=True,
+        )
+    finally:
+        try:
+            AGGREGATE_LOCK_DIR.rmdir()
+        except OSError:
+            pass
+
+
 def main() -> None:
     print(f"[INFO] watching {AGGREGATE_FILE} every {POLL_INTERVAL}s", flush=True)
     print(f"[INFO] influx -> {INFLUX_URL} org={INFLUX_ORG} bucket={INFLUX_BUCKET}", flush=True)
 
     processed_ids = BoundedIdSet()
-    print("[INFO] full-file scan mode enabled; report IDs are deduped in memory", flush=True)
+    print("[INFO] queue compaction enabled; report IDs are deduped in memory", flush=True)
 
     while True:
         try:
@@ -218,14 +278,17 @@ def main() -> None:
                     for key in pending_keys:
                         processed_ids.add(key)
                     print(f"[OK] wrote {len(new_lines)} points from {new_count} new reports", flush=True)
+                    compact_processed_prefix(consumed, current_size)
                 elif new_count:
                     # Reports parsed OK but had no records; mark them so they are
                     # not rechecked on every subsequent poll.
                     for key in pending_keys:
                         processed_ids.add(key)
                     print(f"[INFO] {new_count} empty reports marked as processed", flush=True)
+                    compact_processed_prefix(consumed, current_size)
                 elif reports:
                     print(f"[INFO] {len(reports)} reports already processed", flush=True)
+                    compact_processed_prefix(consumed, current_size)
                 elif consumed == 0 and current_size:
                     print("[WARN] aggregate file has no complete JSON object yet", flush=True)
         except urllib.error.HTTPError as exc:

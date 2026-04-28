@@ -93,11 +93,17 @@ if $PROVISION_MODE; then
   echo "=== Ensuring firewall rule ==="
   gcloud compute firewall-rules create allow-dmarc-stack-ports \
     --project="$PROJECT_ID" \
-    --allow tcp:3000,tcp:8086,tcp:8787 \
+    --allow tcp:8086,tcp:8787 \
     --target-tags=http-server,https-server \
-    --description="Grafana:3000 InfluxDB:8086 Dashboard:8787" 2>/dev/null \
+    --description="InfluxDB:8086 Dashboard:8787" 2>/dev/null \
     && echo "Firewall rule created." \
-    || echo "Firewall rule already exists — skipping."
+    || {
+      echo "Firewall rule already exists — updating allowed ports."
+      gcloud compute firewall-rules update allow-dmarc-stack-ports \
+        --project="$PROJECT_ID" \
+        --allow tcp:8086,tcp:8787 \
+        --target-tags=http-server,https-server
+    }
 
   # ── Wait for SSH to become available ─────────────────────────────────────
   echo "=== Waiting for SSH ==="
@@ -160,7 +166,6 @@ if $PROVISION_MODE; then
   echo "║  Deployment complete                                 ║"
   echo "╠══════════════════════════════════════════════════════╣"
   printf "║  VM          %-38s ║\n" "$VM_NAME  ($VM_IP)"
-  printf "║  Grafana     %-38s ║\n" "http://$VM_IP:3000"
   printf "║  InfluxDB    %-38s ║\n" "http://$VM_IP:8086"
   printf "║  Dashboard   %-38s ║\n" "http://$VM_IP:8787"
   echo "╚══════════════════════════════════════════════════════╝"
@@ -246,12 +251,16 @@ echo "=== Installing Node.js 20 ==="
 curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
 apt-get install -y nodejs
 
-echo "=== Opening firewall ports (3000/8086/8787) ==="
+echo "=== Opening firewall ports (8086/8787) ==="
 if command -v gcloud >/dev/null 2>&1; then
   gcloud compute firewall-rules create allow-dmarc-stack-ports \
-    --allow tcp:3000,tcp:8086,tcp:8787 \
+    --allow tcp:8086,tcp:8787 \
     --target-tags=http-server,https-server \
-    --description="Allow Grafana, InfluxDB and Dashboard ports" || true
+    --description="Allow InfluxDB and Dashboard ports" 2>/dev/null \
+    || gcloud compute firewall-rules update allow-dmarc-stack-ports \
+      --allow tcp:8086,tcp:8787 \
+      --target-tags=http-server,https-server \
+    || true
 else
   echo "gcloud CLI not found on VM; create firewall rules from GCP console."
 fi
@@ -273,12 +282,9 @@ INFLUXDB_ORG=${INFLUXDB_ORG}
 INFLUXDB_TOKEN=${INFLUXDB_TOKEN}
 INFLUXDB_DMARC_BUCKET=${INFLUXDB_DMARC_BUCKET}
 
-# ── Grafana ────────────────────────────────────────────────────────────────────
-GRAFANA_ADMIN_USER=${GRAFANA_ADMIN_USER}
-GRAFANA_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
 EOF
 
-docker compose up -d --build parsedmarc influxdb grafana
+docker compose up -d --build parsedmarc influxdb influx_writer caddy
 
 echo "=== Configuring deliverability_monitor ==="
 cd "${VM_REPO_ROOT}/deliverability_monitor"
@@ -396,6 +402,5 @@ systemctl --no-pager --full status dmarc_dashboard_api || true
 echo
 echo "Setup complete."
 echo "Access URLs (IP-based):"
-echo "  http://${VM_HOST_IP}:3000  (Grafana)"
 echo "  http://${VM_HOST_IP}:8086  (InfluxDB API)"
 echo "  http://${VM_HOST_IP}:8787  (Protected React dashboard)"
