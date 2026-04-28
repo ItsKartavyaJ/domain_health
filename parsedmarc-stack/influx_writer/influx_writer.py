@@ -246,11 +246,20 @@ def main() -> None:
 
     processed_ids = BoundedIdSet()
     print("[INFO] queue compaction enabled; report IDs are deduped in memory", flush=True)
+    last_partial_signature = None
 
     while True:
         try:
             if AGGREGATE_FILE.exists():
-                current_size = AGGREGATE_FILE.stat().st_size
+                stat = AGGREGATE_FILE.stat()
+                current_size = stat.st_size
+                current_signature = (stat.st_size, stat.st_mtime_ns)
+
+                if last_partial_signature == current_signature:
+                    print("[INFO] aggregate tail unchanged; waiting for new data", flush=True)
+                    time.sleep(POLL_INTERVAL)
+                    continue
+
                 if current_size > MAX_READ_BYTES:
                     print(
                         f"[WARN] aggregate file is {current_size} bytes; "
@@ -291,6 +300,11 @@ def main() -> None:
                     compact_processed_prefix(consumed, current_size)
                 elif consumed == 0 and current_size:
                     print("[WARN] aggregate file has no complete JSON object yet", flush=True)
+
+                if consumed < current_size and current_size > 0:
+                    last_partial_signature = current_signature
+                else:
+                    last_partial_signature = None
         except urllib.error.HTTPError as exc:
             print(f"[ERROR] InfluxDB {exc.code}: {exc.read()}", flush=True)
         except Exception as exc:
