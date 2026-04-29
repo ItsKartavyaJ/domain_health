@@ -149,6 +149,8 @@ function InsightsPanel({ domains, spfGaps, blacklist }) {
   const errCount  = items.filter(i => i.severity === 'err').length;
   const warnCount = items.filter(i => i.severity === 'warn').length;
 
+  const preview = items.slice(0, 5);
+
   return (
     <div style={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', marginBottom: 28 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 18px', borderBottom: '1px solid var(--border)' }}>
@@ -165,10 +167,20 @@ function InsightsPanel({ domains, spfGaps, blacklist }) {
         )}
       </div>
       <div>
-        {items.map((item, i) => (
-          <InsightItem key={i} item={item} spfGaps={spfGaps} last={i === items.length - 1} />
+        {preview.map((item, i) => (
+          <InsightItem key={i} item={item} spfGaps={spfGaps} last={i === preview.length - 1 && items.length <= 5} />
         ))}
       </div>
+      {items.length > 5 && (
+        <div style={{ padding: '10px 18px', borderTop: '1px solid var(--border)' }}>
+          <button
+            onClick={() => { window.location.hash = 'issues'; }}
+            style={{ fontSize: 12, fontWeight: 500, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+          >
+            View all {items.length} issues →
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -278,11 +290,26 @@ export default function Overview() {
                 if (allItems.length === 0) return (
                   <div style={{ padding: '24px 18px', fontSize: 13, color: 'var(--muted)', textAlign: 'center' }}>No issues — everything looks good.</div>
                 );
-                return allItems.map((item, i, arr) => (
-                  <InsightItem key={i} item={item} spfGaps={spfGaps} last={i === arr.length - 1} />
+                const preview = allItems.slice(0, 5);
+                return preview.map((item, i) => (
+                  <InsightItem key={i} item={item} spfGaps={spfGaps} last={i === preview.length - 1 && allItems.length <= 5} />
                 ));
               })()}
             </div>
+            {(() => {
+              const bItems = blacklist.map((b) => ({ severity: 'err', domain: b.domain, title: '', action: '' }));
+              const total = bItems.length + buildInsights(domains).length;
+              return total > 5 ? (
+                <div style={{ padding: '10px 18px', borderTop: '1px solid var(--border)' }}>
+                  <button
+                    onClick={() => { window.location.hash = 'issues'; }}
+                    style={{ fontSize: 12, fontWeight: 500, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+                  >
+                    View all {total} issues →
+                  </button>
+                </div>
+              ) : null;
+            })()}
           </div>
 
           {/* Domain health */}
