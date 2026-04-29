@@ -55,6 +55,15 @@ def fetch_warmup_stats(account_id: int) -> Optional[Dict]:
         return None
 
 
+_WARMUP_ACTIVE = {"true", "1", "active", "enabled"}
+
+def _is_warmup_enabled(raw: Dict) -> bool:
+    val = raw.get("warmup_enabled", raw.get("warmup_status", raw.get("status", "")))
+    if isinstance(val, bool):
+        return val
+    return str(val).lower() in _WARMUP_ACTIVE
+
+
 def parse_warmup(account_id: int, email: str, raw: Dict) -> Dict:
     """
     Normalize Smartlead warmup-stats response into a flat dict.
@@ -83,7 +92,7 @@ def parse_warmup(account_id: int, email: str, raw: Dict) -> Dict:
         "account_id": account_id,
         "email": email,
         "domain": domain,
-        "warmup_enabled": bool(raw.get("warmup_enabled", raw.get("status") == "active")),
+        "warmup_enabled": _is_warmup_enabled(raw),
         "total_sent": total_sent,
         "inbox_count": inbox_count,
         "spam_count": spam_count,
