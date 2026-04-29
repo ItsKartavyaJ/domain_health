@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+﻿import { useEffect, useState, useRef } from 'react';
 import { BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
 import DateFilter from '../components/DateFilter';
 import Badge from '../components/Badge';
@@ -99,7 +99,7 @@ export default function Campaigns() {
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
                   <XAxis type="number" tick={{ fontSize: 10, fill: 'var(--muted)' }} tickLine={false} axisLine={false} />
                   <YAxis dataKey="name" type="category" tick={{ fontSize: 12, fill: 'var(--text)' }} width={70} tickLine={false} axisLine={false} />
-                  <Tooltip contentStyle={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12, padding: '8px 12px', color: 'var(--text)' }} cursor={{ fill: 'var(--surface)', opacity: 0.5 }} />
+                  <Tooltip contentStyle={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12, padding: '8px 12px' }} labelStyle={{ color: 'var(--text)', fontWeight: 600 }} itemStyle={{ color: 'var(--muted)' }} cursor={{ fill: 'var(--surface)', opacity: 0.5 }} />
                   <Bar dataKey="value" radius={[0, 6, 6, 0]} barSize={28}>
                     {funnelData.map((entry, i) => (
                       <Cell key={i} fill={entry.fill} />
@@ -138,7 +138,7 @@ export default function Campaigns() {
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
                 <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'var(--muted)' }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
                 <YAxis tick={{ fontSize: 10, fill: 'var(--muted)' }} tickLine={false} axisLine={false} width={40} />
-                <Tooltip contentStyle={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12, padding: '8px 12px', color: 'var(--text)' }} cursor={{ stroke: 'var(--border)' }} />
+                <Tooltip contentStyle={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12, padding: '8px 12px' }} labelStyle={{ color: 'var(--text)', fontWeight: 600 }} itemStyle={{ color: 'var(--muted)' }} cursor={{ stroke: 'var(--border)' }} />
                 <Area type="monotone" dataKey="sent" stroke="#3B82F6" fill="var(--info-bg)" strokeWidth={2} dot={false} activeDot={{ r: 3 }} name="Sent" />
                 <Area type="monotone" dataKey="opened" stroke="#8B5CF6" fill="rgba(139,92,246,0.1)" strokeWidth={2} dot={false} activeDot={{ r: 3 }} name="Opened" />
                 <Area type="monotone" dataKey="replied" stroke="#22C55E" fill="var(--ok-bg)" strokeWidth={2} dot={false} activeDot={{ r: 3 }} name="Replied" />
@@ -238,3 +238,4 @@ export default function Campaigns() {
     </main>
   );
 }
+

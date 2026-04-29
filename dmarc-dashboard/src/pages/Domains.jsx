@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+﻿import { useEffect, useState, useRef } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import DateFilter from '../components/DateFilter';
 import Badge from '../components/Badge';
@@ -193,7 +193,7 @@ export default function Domains() {
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
                 <XAxis type="number" tick={{ fontSize: 10, fill: 'var(--muted)' }} tickLine={false} axisLine={false} />
                 <YAxis dataKey="name" type="category" tick={{ fontSize: 10, fill: 'var(--text)' }} width={110} tickLine={false} axisLine={false} />
-                <Tooltip contentStyle={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12, padding: '8px 12px', color: 'var(--text)' }} cursor={{ fill: 'var(--surface)', opacity: 0.5 }} />
+                <Tooltip contentStyle={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12, padding: '8px 12px' }} labelStyle={{ color: 'var(--text)', fontWeight: 600 }} itemStyle={{ color: 'var(--muted)' }} cursor={{ fill: 'var(--surface)', opacity: 0.5 }} />
                 <Bar dataKey="sent" fill="#3B82F6" name="Sent" radius={[0, 4, 4, 0]} barSize={10} />
                 <Bar dataKey="replied" fill="#22C55E" name="Replied" radius={[0, 4, 4, 0]} barSize={10} />
                 <Bar dataKey="bounced" fill="#EF4444" name="Bounced" radius={[0, 4, 4, 0]} barSize={10} />
@@ -215,7 +215,7 @@ export default function Domains() {
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
                 <XAxis type="number" tick={{ fontSize: 10, fill: 'var(--muted)' }} tickLine={false} axisLine={false} tickFormatter={(v) => `${v}%`} />
                 <YAxis dataKey="name" type="category" tick={{ fontSize: 10, fill: 'var(--text)' }} width={110} tickLine={false} axisLine={false} />
-                <Tooltip contentStyle={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12, padding: '8px 12px', color: 'var(--text)' }} cursor={{ fill: 'var(--surface)', opacity: 0.5 }} formatter={(v) => [`${v}%`, 'Bounce Rate']} />
+                <Tooltip contentStyle={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12, padding: '8px 12px' }} labelStyle={{ color: 'var(--text)', fontWeight: 600 }} itemStyle={{ color: 'var(--muted)' }} cursor={{ fill: 'var(--surface)', opacity: 0.5 }} formatter={(v) => [`${v}%`, 'Bounce Rate']} />
                 <Bar dataKey="bounce_rate" radius={[0, 4, 4, 0]} barSize={10} name="Bounce Rate">
                   {topByBounce.map((d, i) => (
                     <Cell key={i} fill={(d.bounce_rate || 0) > 3 ? '#EF4444' : (d.bounce_rate || 0) > 1 ? '#F59E0B' : '#22C55E'} />
@@ -311,3 +311,4 @@ export default function Domains() {
     </main>
   );
 }
+
