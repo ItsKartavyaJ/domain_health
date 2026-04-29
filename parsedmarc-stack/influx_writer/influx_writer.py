@@ -246,7 +246,7 @@ def main() -> None:
 
     processed_ids = BoundedIdSet()
     print("[INFO] queue compaction enabled; report IDs are deduped in memory", flush=True)
-    last_partial_signature = None
+    last_seen_signature = None  # (st_size, st_mtime_ns) of the last file we fully handled
 
     while True:
         try:
@@ -255,8 +255,8 @@ def main() -> None:
                 current_size = stat.st_size
                 current_signature = (stat.st_size, stat.st_mtime_ns)
 
-                if last_partial_signature == current_signature:
-                    print("[INFO] aggregate tail unchanged; waiting for new data", flush=True)
+                if last_seen_signature == current_signature:
+                    # File hasn't changed since we last processed it — nothing to do.
                     time.sleep(POLL_INTERVAL)
                     continue
 
@@ -301,10 +301,13 @@ def main() -> None:
                 elif consumed == 0 and current_size:
                     print("[WARN] aggregate file has no complete JSON object yet", flush=True)
 
-                if consumed < current_size and current_size > 0:
-                    last_partial_signature = current_signature
+                # Remember this signature. If still partial, we'll re-read next poll;
+                # if fully consumed, signature won't match once parsedmarc appends new data.
+                if consumed >= current_size:
+                    last_seen_signature = current_signature
                 else:
-                    last_partial_signature = None
+                    # Partial — don't mark as seen; retry next poll.
+                    last_seen_signature = None
         except urllib.error.HTTPError as exc:
             print(f"[ERROR] InfluxDB {exc.code}: {exc.read()}", flush=True)
         except Exception as exc:

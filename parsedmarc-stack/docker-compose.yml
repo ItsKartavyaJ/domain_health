@@ -64,7 +64,7 @@ services:
       INFLUX_BUCKET: "${INFLUXDB_DMARC_BUCKET}"
       AGGREGATE_FILE: "/data/aggregate.json"
       AGGREGATE_LOCK_DIR: "/data/aggregate.lock"
-      POLL_INTERVAL: "30"
+      POLL_INTERVAL: "60"
     volumes:
       - parsedmarc_data:/data
     depends_on:
