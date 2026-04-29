@@ -14,6 +14,7 @@ const PORT = Number(process.env.API_PORT || 8787);
 const INFLUX_URL = process.env.INFLUXDB_URL || process.env.INFLUX_URL || '';
 const INFLUX_ORG = process.env.INFLUXDB_ORG || process.env.INFLUX_ORG || 'pintel';
 const INFLUX_BUCKET = process.env.INFLUXDB_DMARC_BUCKET || process.env.INFLUX_BUCKET || 'dmarc';
+const INFLUX_DELIVERABILITY_BUCKET = process.env.INFLUXDB_BUCKET || 'deliverability';
 const INFLUX_TOKEN = process.env.INFLUXDB_TOKEN || process.env.INFLUX_TOKEN || '';
 const FIREBASE_PROJECT_ID = process.env.FIREBASE_PROJECT_ID || '';
 const ALLOWED_DOMAIN = process.env.ALLOWED_DOMAIN || 'pintel.ai';
@@ -336,6 +337,39 @@ app.get('/api/metrics/alerts', authMiddleware, rateLimitMiddleware, async (_req,
     return res.json({ ok: true, alerts: getAlerts(domains) });
   } catch {
     return res.status(500).json({ error: 'Failed to load alerts' });
+  }
+});
+
+app.get('/api/metrics/spf-gaps', authMiddleware, rateLimitMiddleware, async (_req, res) => {
+  try {
+    let rows;
+    try {
+      rows = await queryFlux(`
+from(bucket: "${INFLUX_DELIVERABILITY_BUCKET}")
+  |> range(start: -7d)
+  |> filter(fn: (r) => r._measurement == "spf_ip_validation")
+  |> filter(fn: (r) => r._field == "authorized")
+  |> group(columns: ["domain", "ip"])
+  |> last()
+  |> filter(fn: (r) => r._value == "0" or r._value == 0)
+`);
+    } catch (err) {
+      if (err instanceof InfluxError && (err.status === 404 || err.status === 422)) {
+        return res.json({ ok: true, gaps: {} });
+      }
+      throw err;
+    }
+    const gaps = {};
+    for (const r of rows) {
+      if (r.domain && r.ip) {
+        if (!gaps[r.domain]) gaps[r.domain] = [];
+        if (!gaps[r.domain].includes(r.ip)) gaps[r.domain].push(r.ip);
+      }
+    }
+    return res.json({ ok: true, gaps });
+  } catch (err) {
+    console.error('[spf-gaps]', err.message);
+    return res.status(500).json({ error: 'Failed to load SPF gaps' });
   }
 });
 

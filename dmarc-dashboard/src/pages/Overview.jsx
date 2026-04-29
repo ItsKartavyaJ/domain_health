@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import DomainCard from '../components/DomainCard';
 import DomainTable from '../components/DomainTable';
-import { getDomainStats, refreshDomainStats } from '../api/influx';
+import { getDomainStats, refreshDomainStats, getSpfGaps } from '../api/influx';
 
 function StatPill({ label, value, sub, color }) {
   return (
@@ -64,7 +64,69 @@ function buildInsights(domains) {
   return items.sort((a, b) => (a.severity === b.severity ? 0 : a.severity === 'err' ? -1 : 1));
 }
 
-function InsightsPanel({ domains }) {
+function Chevron({ open }) {
+  return (
+    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+      style={{ flexShrink: 0, transition: 'transform 0.15s', transform: open ? 'rotate(180deg)' : 'rotate(0deg)', color: 'var(--muted)' }}>
+      <polyline points="2,4 6,8 10,4" />
+    </svg>
+  );
+}
+
+function InsightItem({ item, spfGaps, last }) {
+  const [open, setOpen] = useState(false);
+  const isSpfPartial = item.title === 'SPF record is incomplete';
+  const uncoveredIps = isSpfPartial ? (spfGaps[item.domain] || []) : [];
+  const dotColor = item.severity === 'err' ? 'var(--err-text)' : 'var(--warn-text)';
+
+  return (
+    <div style={{ borderBottom: last ? 'none' : '1px solid var(--border)' }}>
+      <div
+        onClick={() => setOpen(o => !o)}
+        style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 18px', cursor: 'pointer', userSelect: 'none' }}
+      >
+        <div style={{ width: 8, height: 8, borderRadius: '50%', background: dotColor, flexShrink: 0 }} />
+        <div style={{ flex: 1, minWidth: 0, fontSize: 13 }}>
+          <span style={{ fontWeight: 600, color: dotColor }}>{item.domain}</span>
+          <span style={{ color: 'var(--text)', fontWeight: 500 }}> — {item.title}</span>
+        </div>
+        <Chevron open={open} />
+      </div>
+      {open && (
+        <div style={{ padding: '0 18px 14px 36px' }}>
+          <div style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.7 }}>{item.action}</div>
+          {isSpfPartial && (
+            <div style={{ marginTop: 10 }}>
+              {uncoveredIps.length > 0 ? (
+                <>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>
+                    Unauthorized sending IPs ({uncoveredIps.length})
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {uncoveredIps.map(ip => (
+                      <span key={ip} style={{ fontFamily: 'monospace', fontSize: 12, padding: '3px 8px', borderRadius: 6, background: 'var(--warn-bg)', color: 'var(--warn-text)', fontWeight: 500 }}>
+                        {ip}
+                      </span>
+                    ))}
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8 }}>
+                    Add these to your SPF record or include the Smartlead <code style={{ fontFamily: 'monospace' }}>include:</code> mechanism.
+                  </div>
+                </>
+              ) : (
+                <div style={{ fontSize: 12, color: 'var(--muted)', fontStyle: 'italic' }}>
+                  No IP-level data yet — SPF validator hasn't run for this domain.
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function InsightsPanel({ domains, spfGaps }) {
   const items = buildInsights(domains);
 
   if (items.length === 0) {
@@ -97,16 +159,7 @@ function InsightsPanel({ domains }) {
       </div>
       <div>
         {items.map((item, i) => (
-          <div key={i} style={{ display: 'flex', gap: 12, padding: '13px 18px', borderBottom: i < items.length - 1 ? '1px solid var(--border)' : 'none' }}>
-            <div style={{ width: 8, height: 8, borderRadius: '50%', background: item.severity === 'err' ? 'var(--err-text)' : 'var(--warn-text)', marginTop: 5, flexShrink: 0 }} />
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 3 }}>
-                <span style={{ color: item.severity === 'err' ? 'var(--err-text)' : 'var(--warn-text)' }}>{item.domain}</span>
-                <span style={{ color: 'var(--text)', fontWeight: 500 }}> — {item.title}</span>
-              </div>
-              <div style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.6 }}>{item.action}</div>
-            </div>
-          </div>
+          <InsightItem key={i} item={item} spfGaps={spfGaps} last={i === items.length - 1} />
         ))}
       </div>
     </div>
@@ -117,6 +170,7 @@ export default function Overview() {
   const [domains, setDomains]   = useState([]);
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState(null);
+  const [spfGaps, setSpfGaps]   = useState({});
 
   function fetchData() {
     setLoading(true);
@@ -125,6 +179,7 @@ export default function Overview() {
       .then(setDomains)
       .catch(() => setError('Failed to load domain stats.'))
       .finally(() => setLoading(false));
+    getSpfGaps().then(setSpfGaps).catch(() => {});
   }
 
   useEffect(() => { fetchData(); }, []);
@@ -176,7 +231,7 @@ export default function Overview() {
       )}
 
       {/* Insights panel — only after domains load */}
-      {!loading && !error && <InsightsPanel domains={domains} />}
+      {!loading && !error && <InsightsPanel domains={domains} spfGaps={spfGaps} />}
 
       {/* Top domain cards */}
       {!loading && domains.length > 0 && (
@@ -202,16 +257,7 @@ export default function Overview() {
                 <div style={{ padding: '24px 18px', fontSize: 13, color: 'var(--muted)', textAlign: 'center' }}>No issues — everything looks good.</div>
               ) : (
                 buildInsights(domains).map((item, i, arr) => (
-                  <div key={i} style={{ display: 'flex', gap: 12, padding: '12px 18px', borderBottom: i < arr.length - 1 ? '1px solid var(--border)' : 'none' }}>
-                    <div style={{ width: 8, height: 8, borderRadius: '50%', background: item.severity === 'err' ? 'var(--err-text)' : 'var(--warn-text)', marginTop: 5, flexShrink: 0 }} />
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 600 }}>
-                        <span style={{ color: item.severity === 'err' ? 'var(--err-text)' : 'var(--warn-text)' }}>{item.domain}</span>
-                        <span style={{ color: 'var(--text)', fontWeight: 500 }}> — {item.title}</span>
-                      </div>
-                      <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 3, lineHeight: 1.6 }}>{item.action}</div>
-                    </div>
-                  </div>
+                  <InsightItem key={i} item={item} spfGaps={spfGaps} last={i === arr.length - 1} />
                 ))
               )}
             </div>

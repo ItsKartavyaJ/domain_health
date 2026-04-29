@@ -18,6 +18,10 @@ export function getAlerts() {
   return cached('/api/metrics/alerts', () => authFetch('/api/metrics/alerts').then((j) => j.alerts || []));
 }
 
+export function getSpfGaps() {
+  return cached('/api/metrics/spf-gaps', () => authFetch('/api/metrics/spf-gaps').then((j) => j.gaps || {}));
+}
+
 export async function refreshDomainStats() {
   const token = await getIdToken();
   const res = await fetch('/api/metrics/refresh', {
