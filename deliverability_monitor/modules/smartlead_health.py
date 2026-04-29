@@ -53,15 +53,20 @@ class SmartleadClient:
             log.error("Smartlead request failed %s: %s", path, e)
             return None
 
-    def _normalise_list(self, data) -> List[Dict]:
+    def _normalise_list(self, data, *extra_keys) -> List[Dict]:
         """Coerce API response to a list of dicts regardless of envelope shape."""
         if isinstance(data, list):
             return data
-        inner = data.get("data", data.get("results", data))
-        if isinstance(inner, list):
-            return inner
-        if isinstance(inner, dict):
-            return [inner]
+        # Try caller-supplied keys first, then generic envelopes
+        for key in (*extra_keys, "data", "results"):
+            val = data.get(key)
+            if isinstance(val, list):
+                return val
+            if isinstance(val, dict):
+                return [val]
+        # Bare dict — treat as single row
+        if isinstance(data, dict):
+            return [data]
         return []
 
     def fetch_domain_health(self) -> Optional[List[Dict]]:
@@ -69,8 +74,10 @@ class SmartleadClient:
         data = self._get("/analytics/mailbox/domain-wise-health-metrics")
         if data is None:
             return None
-        rows = self._normalise_list(data)
+        rows = self._normalise_list(data, "domain_health_metrics")
         log.info("domain-wise raw response type=%s len=%d", type(data).__name__, len(rows))
+        if rows:
+            log.info("domain-wise first row: %s", rows[0])
         return rows
 
     def fetch_name_health(self) -> Optional[List[Dict]]:
@@ -78,8 +85,10 @@ class SmartleadClient:
         data = self._get("/analytics/mailbox/name-wise-health-metrics")
         if data is None:
             return None
-        rows = self._normalise_list(data)
+        rows = self._normalise_list(data, "email_health_metrics")
         log.info("name-wise raw response type=%s len=%d", type(data).__name__, len(rows))
+        if rows:
+            log.info("name-wise first row: %s", rows[0])
         return rows
 
     def fetch_mailbox_overall(self) -> Optional[Dict]:
