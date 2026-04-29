@@ -99,6 +99,7 @@ class InfluxWriter:
         bounce_rate: float,
         open_rate: float,
         reply_rate: float,
+        positive_reply_rate: float,
         mailbox_count: int,
     ) -> Point:
         return (
@@ -114,6 +115,7 @@ class InfluxWriter:
             .field("bounce_rate", bounce_rate)
             .field("open_rate", open_rate)
             .field("reply_rate", reply_rate)
+            .field("positive_reply_rate", positive_reply_rate)
             .field("mailbox_count", mailbox_count)
             .time(datetime.now(timezone.utc), WritePrecision.S)
         )

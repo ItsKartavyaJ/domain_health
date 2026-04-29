@@ -38,6 +38,10 @@ export function getWarmupSummary() {
   return cached('/api/metrics/warmup-summary', () => authFetch('/api/metrics/warmup-summary').then((j) => j.domains || []));
 }
 
+export function getSenderHealth() {
+  return cached('/api/metrics/sender-health', () => authFetch('/api/metrics/sender-health').then((j) => j.domains || []));
+}
+
 export function getDmarcSources() {
   return cached('/api/metrics/dmarc-sources', () => authFetch('/api/metrics/dmarc-sources').then((j) => j.sources || []));
 }

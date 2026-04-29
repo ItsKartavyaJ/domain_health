@@ -644,6 +644,92 @@ from(bucket: "${INFLUX_BUCKET}")
   }
 });
 
+app.get('/api/metrics/sender-health', authMiddleware, rateLimitMiddleware, async (_req, res) => {
+  try {
+    let domainRows, mailboxRows;
+    try {
+      [domainRows, mailboxRows] = await Promise.all([
+        queryFlux(`
+from(bucket: "${INFLUX_DELIVERABILITY_BUCKET}")
+  |> range(start: -48h)
+  |> filter(fn: (r) => r._measurement == "smartlead_health")
+  |> filter(fn: (r) => r.grain == "domain")
+  |> filter(fn: (r) => r._field == "reply_rate" or r._field == "bounce_rate" or r._field == "positive_reply_rate" or r._field == "sent_count" or r._field == "inbox_pct" or r._field == "spam_pct")
+  |> map(fn: (r) => ({
+      _time: r._time,
+      _measurement: r._measurement,
+      domain: r.domain,
+      _field: r._field,
+      _value: string(v: r._value),
+    }))
+  |> group(columns: ["_measurement", "domain", "_field"])
+  |> last()
+  |> group(columns: ["domain"])
+  |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
+`),
+        queryFlux(`
+from(bucket: "${INFLUX_DELIVERABILITY_BUCKET}")
+  |> range(start: -48h)
+  |> filter(fn: (r) => r._measurement == "smartlead_health")
+  |> filter(fn: (r) => r.grain == "mailbox")
+  |> filter(fn: (r) => r._field == "sent_count" or r._field == "inbox_pct" or r._field == "spam_pct" or r._field == "bounce_rate" or r._field == "warmup_status" or r._field == "health_score")
+  |> map(fn: (r) => ({
+      _time: r._time,
+      _measurement: r._measurement,
+      email: r.email,
+      domain: r.domain,
+      _field: r._field,
+      _value: string(v: r._value),
+    }))
+  |> group(columns: ["_measurement", "email", "domain", "_field"])
+  |> last()
+  |> group(columns: ["email", "domain"])
+  |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
+`),
+      ]);
+    } catch (err) {
+      if (err instanceof InfluxError && (err.status === 404 || err.status === 422)) {
+        return res.json({ ok: true, domains: [] });
+      }
+      throw err;
+    }
+
+    // Build mailbox map keyed by domain
+    const mailboxMap = {};
+    for (const r of mailboxRows) {
+      if (!r.domain || !r.email) continue;
+      if (!mailboxMap[r.domain]) mailboxMap[r.domain] = [];
+      mailboxMap[r.domain].push({
+        email: r.email,
+        sent_count: Math.round(toNumber(r.sent_count)),
+        inbox_pct: Math.round(toNumber(r.inbox_pct) * 10) / 10,
+        spam_pct: Math.round(toNumber(r.spam_pct) * 10) / 10,
+        bounce_rate: Math.round(toNumber(r.bounce_rate) * 10) / 10,
+        health_score: Math.round(toNumber(r.health_score)),
+        warmup_status: r.warmup_status || 'unknown',
+      });
+    }
+
+    // Build domain rows
+    const domains = domainRows
+      .filter((r) => r.domain)
+      .map((r) => ({
+        domain: r.domain,
+        sent_count: Math.round(toNumber(r.sent_count)),
+        reply_rate: Math.round(toNumber(r.reply_rate) * 10) / 10,
+        bounce_rate: Math.round(toNumber(r.bounce_rate) * 10) / 10,
+        positive_reply_rate: Math.round(toNumber(r.positive_reply_rate) * 10) / 10,
+        mailboxes: (mailboxMap[r.domain] || []).sort((a, b) => b.sent_count - a.sent_count),
+      }))
+      .sort((a, b) => b.sent_count - a.sent_count);
+
+    return res.json({ ok: true, domains });
+  } catch (err) {
+    console.error('[sender-health]', err.message);
+    return res.status(500).json({ error: 'Failed to load sender health' });
+  }
+});
+
 app.use('/api/smartlead', authMiddleware, rateLimitMiddleware, smartleadRouter);
 
 app.use(express.static(distPath));

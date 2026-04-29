@@ -93,6 +93,7 @@ def parse_domain_row(row: Dict) -> Dict:
         "bounce_rate": _safe_float(row.get("bounce_rate", row.get("bounce_percentage"))),
         "open_rate": _safe_float(row.get("open_rate", row.get("open_percentage"))),
         "reply_rate": _safe_float(row.get("reply_rate", row.get("reply_percentage"))),
+        "positive_reply_rate": _safe_float(row.get("positive_reply_rate", row.get("positive_reply_percentage", row.get("positive_reply_pct", 0.0)))),
         "mailbox_count": _safe_int(row.get("mailbox_count", row.get("email_count", 1))),
     }
 
