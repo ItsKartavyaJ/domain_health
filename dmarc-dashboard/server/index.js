@@ -250,7 +250,13 @@ from(bucket: "${INFLUX_BUCKET}")
         dkim: dkimRate > 95 ? 'Pass' : 'Fail',
         lastReport: 'recently',
         trend: 0,
-        status: rate > 80 ? 'ok' : rate > 50 ? 'warn' : 'danger',
+        status: (() => {
+          const spf = spfRate > 95 ? 'Pass' : spfRate > 70 ? 'Partial' : 'Fail';
+          const dkim = dkimRate > 95 ? 'Pass' : 'Fail';
+          if (dkim === 'Fail' || rate <= 50) return 'err';
+          if (spf !== 'Pass' || rate <= 80) return 'warn';
+          return 'ok';
+        })(),
       };
     });
 }
