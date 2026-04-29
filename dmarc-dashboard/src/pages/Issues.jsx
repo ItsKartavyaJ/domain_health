@@ -102,14 +102,15 @@ export default function Issues() {
   const [severityFilter, setSeverityFilter] = useState('all');
 
   useEffect(() => {
-    Promise.all([getDomainStats(), getSpfGaps(), getBlacklistStatus()])
-      .then(([d, gaps, bl]) => {
-        setDomains(Array.isArray(d) ? d : []);
-        setSpfGaps(gaps || {});
-        setBlacklist(Array.isArray(bl) ? bl : []);
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
+    Promise.all([
+      getDomainStats().catch(() => []),
+      getSpfGaps().catch(() => ({})),
+      getBlacklistStatus().catch(() => []),
+    ]).then(([d, gaps, bl]) => {
+      setDomains(Array.isArray(d) ? d : []);
+      setSpfGaps(gaps || {});
+      setBlacklist(Array.isArray(bl) ? bl : []);
+    }).finally(() => setLoading(false));
   }, []);
 
   const blacklistItems = blacklist.map((b) => ({
