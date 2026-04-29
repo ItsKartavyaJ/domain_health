@@ -262,31 +262,57 @@ from(bucket: "${INFLUX_BUCKET}")
 }
 
 function getAlerts(domains) {
+  const ORDER = { red: 0, amber: 1, green: 2 };
   return domains
     .map((d) => {
-      if (d.rate === 100) {
+      if (d.dkim === 'Fail') {
         return {
-          type: 'green',
+          type: 'red',
           domain: d.domain,
-          message: `${d.domain} — All checks passed`,
-          desc: 'SPF, DKIM and DMARC are all aligned and passing.',
+          message: `${d.domain} — DKIM not configured`,
+          desc: 'Emails are sent without a DKIM signature. Add a DKIM TXT record in your DNS provider to authenticate outbound mail.',
         };
       }
       if (d.rate < 50) {
         return {
           type: 'red',
           domain: d.domain,
-          message: `${d.domain} — DMARC failure rate critical`,
-          desc: `${100 - d.rate}% of emails are failing DMARC. Immediate action needed.`,
+          message: `${d.domain} — ${100 - d.rate}% of emails failing DMARC`,
+          desc: 'More than half of emails from this domain are failing DMARC. Gmail and Outlook may block or quarantine them.',
+        };
+      }
+      if (d.spf === 'Fail') {
+        return {
+          type: 'red',
+          domain: d.domain,
+          message: `${d.domain} — No SPF record found`,
+          desc: 'SPF record is missing or invalid. Add a DNS TXT record: v=spf1 include:your-mail-provider.com ~all',
+        };
+      }
+      if (d.spf === 'Partial') {
+        return {
+          type: 'amber',
+          domain: d.domain,
+          message: `${d.domain} — SPF record is incomplete`,
+          desc: 'Some sending IPs are not covered. Review which mail servers send on behalf of this domain and update the SPF record.',
+        };
+      }
+      if (d.rate <= 80) {
+        return {
+          type: 'amber',
+          domain: d.domain,
+          message: `${d.domain} — DMARC pass rate at ${d.rate}%`,
+          desc: 'Below 80% — Google may throttle delivery from this domain. Check SPF and DKIM alignment in your mail platform.',
         };
       }
       return {
-        type: 'amber',
+        type: 'green',
         domain: d.domain,
-        message: `${d.domain} — DMARC partially failing`,
-        desc: `${100 - d.rate}% of emails failing. Check SPF/DKIM alignment.`,
+        message: `${d.domain} — All checks passed`,
+        desc: 'SPF, DKIM and DMARC are all aligned and passing.',
       };
     })
+    .sort((a, b) => (ORDER[a.type] ?? 3) - (ORDER[b.type] ?? 3))
     .slice(0, 8);
 }
 

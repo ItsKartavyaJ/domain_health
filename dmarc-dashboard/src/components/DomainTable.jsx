@@ -1,10 +1,10 @@
 import { useState } from 'react';
 
-const Badge = ({ type, children }) => {
+const Badge = ({ type, children, title }) => {
   const bg   = { ok: 'var(--ok-bg)',   warn: 'var(--warn-bg)',   err: 'var(--err-bg)',   info: 'var(--info-bg)'   };
   const text = { ok: 'var(--ok-text)', warn: 'var(--warn-text)', err: 'var(--err-text)', info: 'var(--info-text)' };
   return (
-    <span style={{ fontSize: 11, padding: '3px 9px', borderRadius: 99, fontWeight: 600, background: bg[type], color: text[type], whiteSpace: 'nowrap' }}>
+    <span title={title} style={{ fontSize: 11, padding: '3px 9px', borderRadius: 99, fontWeight: 600, background: bg[type], color: text[type], whiteSpace: 'nowrap', cursor: title ? 'help' : 'default' }}>
       {children}
     </span>
   );
@@ -110,8 +110,25 @@ export default function DomainTable({ domains }) {
                       <span style={{ fontSize: 12, fontWeight: 600, minWidth: 36, color: scoreColor }}>{d.rate}%</span>
                     </div>
                   </td>
-                  <td style={{ padding: '12px 18px' }}><Badge type={d.spf === 'Pass' ? 'ok' : d.spf === 'Partial' ? 'warn' : 'err'}>{d.spf}</Badge></td>
-                  <td style={{ padding: '12px 18px' }}><Badge type={d.dkim === 'Pass' ? 'ok' : 'err'}>{d.dkim}</Badge></td>
+                  <td style={{ padding: '12px 18px' }}>
+                    <Badge
+                      type={d.spf === 'Pass' ? 'ok' : d.spf === 'Partial' ? 'warn' : 'err'}
+                      title={
+                        d.spf === 'Pass' ? 'All sending IPs are authorized by your SPF record — no action needed' :
+                        d.spf === 'Partial' ? 'Some sending IPs are not covered by your SPF record. Update the DNS TXT record to add missing mail servers.' :
+                        'No valid SPF record found. Add a DNS TXT record: v=spf1 include:your-mail-provider.com ~all'
+                      }
+                    >{d.spf}</Badge>
+                  </td>
+                  <td style={{ padding: '12px 18px' }}>
+                    <Badge
+                      type={d.dkim === 'Pass' ? 'ok' : 'err'}
+                      title={
+                        d.dkim === 'Pass' ? 'Emails are signed with DKIM — recipients can verify they were not altered in transit' :
+                        'No DKIM signature found. Add a DKIM TXT record in your DNS provider to authenticate outbound mail.'
+                      }
+                    >{d.dkim}</Badge>
+                  </td>
                   <td style={{ padding: '12px 18px', fontSize: 13, color: 'var(--text)' }}>{d.total.toLocaleString()}</td>
                   <td style={{ padding: '12px 18px', fontSize: 12, fontWeight: 500, color: d.trend > 0 ? 'var(--ok-text)' : d.trend < 0 ? 'var(--err-text)' : 'var(--muted)' }}>
                     {d.trend > 0 ? `▲ ${d.trend}%` : d.trend < 0 ? `▼ ${Math.abs(d.trend)}%` : '—'}
