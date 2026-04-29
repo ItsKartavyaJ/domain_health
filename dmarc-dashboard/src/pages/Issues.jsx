@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { getDomainStats, getSpfGaps, getBlacklistStatus } from '../api/influx';
+import { getDomainStats, getSpfGaps } from '../api/influx';
 
 function buildInsights(domains) {
   const items = [];
@@ -96,7 +96,6 @@ function InsightItem({ item, spfGaps, last }) {
 export default function Issues() {
   const [domains, setDomains]   = useState([]);
   const [spfGaps, setSpfGaps]   = useState({});
-  const [blacklist, setBlacklist] = useState([]);
   const [loading, setLoading]   = useState(true);
   const [search, setSearch]     = useState('');
   const [severityFilter, setSeverityFilter] = useState('all');
@@ -105,20 +104,13 @@ export default function Issues() {
     Promise.all([
       getDomainStats().catch(() => []),
       getSpfGaps().catch(() => ({})),
-      getBlacklistStatus().catch(() => []),
-    ]).then(([d, gaps, bl]) => {
+    ]).then(([d, gaps]) => {
       setDomains(Array.isArray(d) ? d : []);
       setSpfGaps(gaps || {});
-      setBlacklist(Array.isArray(bl) ? bl : []);
     }).finally(() => setLoading(false));
   }, []);
 
-  const blacklistItems = blacklist.map((b) => ({
-    severity: 'err', domain: b.domain,
-    title: `Listed on ${b.listCount} blacklist${b.listCount !== 1 ? 's' : ''}`,
-    action: `Found on: ${b.lists.slice(0, 5).join(', ')}${b.lists.length > 5 ? ` and ${b.lists.length - 5} more` : ''}. Investigate sending practices and request delisting from each provider.`,
-  }));
-  const allItems = [...blacklistItems, ...buildInsights(domains)];
+  const allItems = buildInsights(domains);
 
   const filtered = allItems.filter((item) => {
     const matchesSeverity = severityFilter === 'all' || item.severity === severityFilter;

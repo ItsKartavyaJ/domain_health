@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import DomainCard from '../components/DomainCard';
 import DomainTable from '../components/DomainTable';
-import { getDomainStats, refreshDomainStats, getSpfGaps, getBlacklistStatus, getDomainTrend } from '../api/influx';
+import { getDomainStats, refreshDomainStats, getSpfGaps, getDomainTrend } from '../api/influx';
 
 function StatPill({ label, value, sub, color }) {
   return (
@@ -126,15 +126,8 @@ function InsightItem({ item, spfGaps, last }) {
   );
 }
 
-function InsightsPanel({ domains, spfGaps, blacklist }) {
-  const blacklistItems = blacklist.map((b) => ({
-    severity: 'err',
-    domain: b.domain,
-    title: `Listed on ${b.listCount} blacklist${b.listCount !== 1 ? 's' : ''}`,
-    action: `This domain was found on: ${b.lists.slice(0, 5).join(', ')}${b.lists.length > 5 ? ` and ${b.lists.length - 5} more` : ''}. Investigate sending practices and request delisting from each provider.`,
-    isBlacklist: true,
-  }));
-  const items = [...blacklistItems, ...buildInsights(domains)];
+function InsightsPanel({ domains, spfGaps }) {
+  const items = buildInsights(domains);
 
   if (items.length === 0) {
     return (
@@ -190,7 +183,6 @@ export default function Overview() {
   const [loading, setLoading]       = useState(true);
   const [error, setError]           = useState(null);
   const [spfGaps, setSpfGaps]       = useState({});
-  const [blacklist, setBlacklist]   = useState([]);
   const [trendMap, setTrendMap]     = useState({});
 
   function fetchData() {
@@ -201,7 +193,6 @@ export default function Overview() {
       .catch(() => setError('Failed to load domain stats.'))
       .finally(() => setLoading(false));
     getSpfGaps().then(setSpfGaps).catch(() => {});
-    getBlacklistStatus().then(setBlacklist).catch(() => {});
     getDomainTrend().then((trends) => {
       const map = {};
       for (const t of trends) map[t.domain] = t;
@@ -258,7 +249,7 @@ export default function Overview() {
       )}
 
       {/* Insights panel — only after domains load */}
-      {!loading && !error && <InsightsPanel domains={domains} spfGaps={spfGaps} blacklist={blacklist} />}
+      {!loading && !error && <InsightsPanel domains={domains} spfGaps={spfGaps} />}
 
       {/* Top domain cards */}
       {!loading && domains.length > 0 && (
@@ -281,12 +272,7 @@ export default function Overview() {
             </div>
             <div style={{ padding: '4px 0' }}>
               {(() => {
-                const bItems = blacklist.map((b) => ({
-                  severity: 'err', domain: b.domain,
-                  title: `Listed on ${b.listCount} blacklist${b.listCount !== 1 ? 's' : ''}`,
-                  action: `Found on: ${b.lists.slice(0, 5).join(', ')}${b.lists.length > 5 ? ` and ${b.lists.length - 5} more` : ''}. Investigate and request delisting.`,
-                }));
-                const allItems = [...bItems, ...buildInsights(domains)];
+                const allItems = buildInsights(domains);
                 if (allItems.length === 0) return (
                   <div style={{ padding: '24px 18px', fontSize: 13, color: 'var(--muted)', textAlign: 'center' }}>No issues — everything looks good.</div>
                 );
@@ -297,8 +283,7 @@ export default function Overview() {
               })()}
             </div>
             {(() => {
-              const bItems = blacklist.map((b) => ({ severity: 'err', domain: b.domain, title: '', action: '' }));
-              const total = bItems.length + buildInsights(domains).length;
+              const total = buildInsights(domains).length;
               return total > 5 ? (
                 <div style={{ padding: '10px 18px', borderTop: '1px solid var(--border)' }}>
                   <button
