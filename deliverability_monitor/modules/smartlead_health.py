@@ -148,6 +148,7 @@ def run() -> dict:
     domain_rows = client.fetch_domain_health()
     if domain_rows:
         log.info("Fetched %d domain-wise rows from Smartlead", len(domain_rows))
+        log.info("domain-wise first raw row keys: %s", list(domain_rows[0].keys()) if domain_rows else [])
         for raw in domain_rows:
             if not isinstance(raw, dict):
                 log.warning("Skipping non-dict domain row (type=%s): %r", type(raw).__name__, raw)
@@ -173,6 +174,7 @@ def run() -> dict:
     mailbox_rows = client.fetch_name_health()
     if mailbox_rows:
         log.info("Fetched %d name-wise rows from Smartlead", len(mailbox_rows))
+        log.info("name-wise first raw row keys: %s", list(mailbox_rows[0].keys()) if mailbox_rows else [])
         for raw in mailbox_rows:
             if not isinstance(raw, dict):
                 log.warning("Skipping non-dict mailbox row (type=%s): %r", type(raw).__name__, raw)
