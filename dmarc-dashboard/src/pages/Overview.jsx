@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import DomainCard from '../components/DomainCard';
 import DomainTable from '../components/DomainTable';
-import { getDomainStats, refreshDomainStats, getSpfGaps } from '../api/influx';
+import { getDomainStats, refreshDomainStats, getSpfGaps, getBlacklistStatus, getDomainTrend } from '../api/influx';
 
 function StatPill({ label, value, sub, color }) {
   return (
@@ -126,8 +126,15 @@ function InsightItem({ item, spfGaps, last }) {
   );
 }
 
-function InsightsPanel({ domains, spfGaps }) {
-  const items = buildInsights(domains);
+function InsightsPanel({ domains, spfGaps, blacklist }) {
+  const blacklistItems = blacklist.map((b) => ({
+    severity: 'err',
+    domain: b.domain,
+    title: `Listed on ${b.listCount} blacklist${b.listCount !== 1 ? 's' : ''}`,
+    action: `This domain was found on: ${b.lists.slice(0, 5).join(', ')}${b.lists.length > 5 ? ` and ${b.lists.length - 5} more` : ''}. Investigate sending practices and request delisting from each provider.`,
+    isBlacklist: true,
+  }));
+  const items = [...blacklistItems, ...buildInsights(domains)];
 
   if (items.length === 0) {
     return (
@@ -167,10 +174,12 @@ function InsightsPanel({ domains, spfGaps }) {
 }
 
 export default function Overview() {
-  const [domains, setDomains]   = useState([]);
-  const [loading, setLoading]   = useState(true);
-  const [error, setError]       = useState(null);
-  const [spfGaps, setSpfGaps]   = useState({});
+  const [domains, setDomains]       = useState([]);
+  const [loading, setLoading]       = useState(true);
+  const [error, setError]           = useState(null);
+  const [spfGaps, setSpfGaps]       = useState({});
+  const [blacklist, setBlacklist]   = useState([]);
+  const [trendMap, setTrendMap]     = useState({});
 
   function fetchData() {
     setLoading(true);
@@ -180,6 +189,12 @@ export default function Overview() {
       .catch(() => setError('Failed to load domain stats.'))
       .finally(() => setLoading(false));
     getSpfGaps().then(setSpfGaps).catch(() => {});
+    getBlacklistStatus().then(setBlacklist).catch(() => {});
+    getDomainTrend().then((trends) => {
+      const map = {};
+      for (const t of trends) map[t.domain] = t;
+      setTrendMap(map);
+    }).catch(() => {});
   }
 
   useEffect(() => { fetchData(); }, []);
@@ -231,7 +246,7 @@ export default function Overview() {
       )}
 
       {/* Insights panel — only after domains load */}
-      {!loading && !error && <InsightsPanel domains={domains} spfGaps={spfGaps} />}
+      {!loading && !error && <InsightsPanel domains={domains} spfGaps={spfGaps} blacklist={blacklist} />}
 
       {/* Top domain cards */}
       {!loading && domains.length > 0 && (
@@ -253,13 +268,20 @@ export default function Overview() {
               <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>Specific actions to improve deliverability</div>
             </div>
             <div style={{ padding: '4px 0' }}>
-              {buildInsights(domains).length === 0 ? (
-                <div style={{ padding: '24px 18px', fontSize: 13, color: 'var(--muted)', textAlign: 'center' }}>No issues — everything looks good.</div>
-              ) : (
-                buildInsights(domains).map((item, i, arr) => (
+              {(() => {
+                const bItems = blacklist.map((b) => ({
+                  severity: 'err', domain: b.domain,
+                  title: `Listed on ${b.listCount} blacklist${b.listCount !== 1 ? 's' : ''}`,
+                  action: `Found on: ${b.lists.slice(0, 5).join(', ')}${b.lists.length > 5 ? ` and ${b.lists.length - 5} more` : ''}. Investigate and request delisting.`,
+                }));
+                const allItems = [...bItems, ...buildInsights(domains)];
+                if (allItems.length === 0) return (
+                  <div style={{ padding: '24px 18px', fontSize: 13, color: 'var(--muted)', textAlign: 'center' }}>No issues — everything looks good.</div>
+                );
+                return allItems.map((item, i, arr) => (
                   <InsightItem key={i} item={item} spfGaps={spfGaps} last={i === arr.length - 1} />
-                ))
-              )}
+                ));
+              })()}
             </div>
           </div>
 
@@ -269,24 +291,43 @@ export default function Overview() {
               <div style={{ fontSize: 14, fontWeight: 600 }}>Domain health</div>
               <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>DMARC pass rate per domain · target 80%+</div>
             </div>
-            <div style={{ padding: '4px 0', maxHeight: 360, overflowY: 'auto' }}>
-              {domains.map((d, i) => (
-                <div key={d.domain} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '11px 18px', borderBottom: i < domains.length - 1 ? '1px solid var(--border)' : 'none' }}>
-                  <div style={{ minWidth: 0, flex: 1 }}>
-                    <div style={{ fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.domain}</div>
-                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{d.total.toLocaleString()} emails</div>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 12 }}>
-                    <div style={{ width: 48, height: 4, background: 'var(--surface)', borderRadius: 99, overflow: 'hidden' }}>
-                      <div style={{ height: '100%', width: `${d.rate}%`, background: d.status === 'ok' ? '#22C55E' : d.status === 'warn' ? '#F59E0B' : '#EF4444', borderRadius: 99 }} />
+            <div style={{ padding: '4px 0' }}>
+              {domains.slice(0, 5).map((d, i) => {
+                const trend = trendMap[d.domain];
+                const delta = trend ? trend.delta : null;
+                return (
+                  <div key={d.domain} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '11px 18px', borderBottom: '1px solid var(--border)' }}>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.domain}</div>
+                      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{d.total.toLocaleString()} emails</div>
                     </div>
-                    <span style={{ fontSize: 13, fontWeight: 700, minWidth: 36, textAlign: 'right', color: d.status === 'ok' ? 'var(--ok-text)' : d.status === 'warn' ? 'var(--warn-text)' : 'var(--err-text)' }}>
-                      {d.rate}%
-                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 12 }}>
+                      {delta !== null && (
+                        <span style={{ fontSize: 11, fontWeight: 600, color: delta > 0 ? 'var(--ok-text)' : delta < 0 ? 'var(--err-text)' : 'var(--muted)', minWidth: 36, textAlign: 'right' }}>
+                          {delta > 0 ? `↑+${delta}%` : delta < 0 ? `↓${delta}%` : '→'}
+                        </span>
+                      )}
+                      <div style={{ width: 48, height: 4, background: 'var(--surface)', borderRadius: 99, overflow: 'hidden' }}>
+                        <div style={{ height: '100%', width: `${d.rate}%`, background: d.status === 'ok' ? '#22C55E' : d.status === 'warn' ? '#F59E0B' : '#EF4444', borderRadius: 99 }} />
+                      </div>
+                      <span style={{ fontSize: 13, fontWeight: 700, minWidth: 36, textAlign: 'right', color: d.status === 'ok' ? 'var(--ok-text)' : d.status === 'warn' ? 'var(--warn-text)' : 'var(--err-text)' }}>
+                        {d.rate}%
+                      </span>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
+            {domains.length > 5 && (
+              <div style={{ padding: '10px 18px', borderTop: '1px solid var(--border)' }}>
+                <button
+                  onClick={() => { window.location.hash = 'domains'; }}
+                  style={{ fontSize: 12, fontWeight: 500, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+                >
+                  View all {domains.length} domains →
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

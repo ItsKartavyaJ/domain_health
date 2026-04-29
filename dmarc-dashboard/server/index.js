@@ -381,6 +381,269 @@ app.post('/api/metrics/refresh', authMiddleware, rateLimitMiddleware, (_req, res
   return res.json({ ok: true });
 });
 
+app.get('/api/metrics/blacklist-status', authMiddleware, rateLimitMiddleware, async (_req, res) => {
+  try {
+    let rows;
+    try {
+      rows = await queryFlux(`
+from(bucket: "${INFLUX_DELIVERABILITY_BUCKET}")
+  |> range(start: -7d)
+  |> filter(fn: (r) => r._measurement == "rbl_check")
+  |> filter(fn: (r) => r._field == "blacklisted" or r._field == "list_count" or r._field == "detected_by")
+  |> map(fn: (r) => ({
+      _time: r._time,
+      _measurement: r._measurement,
+      domain: r.domain,
+      check_type: r.check_type,
+      _field: r._field,
+      _value: string(v: r._value),
+    }))
+  |> group(columns: ["_measurement", "domain", "check_type", "_field"])
+  |> last()
+  |> group(columns: ["domain", "check_type"])
+  |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
+`);
+    } catch (err) {
+      if (err instanceof InfluxError && (err.status === 404 || err.status === 422)) {
+        return res.json({ ok: true, domains: [] });
+      }
+      throw err;
+    }
+    const domainMap = {};
+    for (const r of rows) {
+      if (!r.domain) continue;
+      if (!domainMap[r.domain]) domainMap[r.domain] = { domain: r.domain, blacklisted: false, lists: [], listCount: 0 };
+      const isBlacklisted = r.blacklisted === '1' || Number(r.blacklisted) === 1;
+      if (isBlacklisted) {
+        domainMap[r.domain].blacklisted = true;
+        domainMap[r.domain].listCount = toNumber(r.list_count);
+        if (r.detected_by) {
+          const lists = r.detected_by.split(',').map((s) => s.trim()).filter(Boolean);
+          for (const l of lists) {
+            if (!domainMap[r.domain].lists.includes(l)) domainMap[r.domain].lists.push(l);
+          }
+        }
+      }
+    }
+    const domains = Object.values(domainMap).filter((d) => d.blacklisted);
+    return res.json({ ok: true, domains });
+  } catch (err) {
+    console.error('[blacklist-status]', err.message);
+    return res.status(500).json({ error: 'Failed to load blacklist status' });
+  }
+});
+
+app.get('/api/metrics/dns-status', authMiddleware, rateLimitMiddleware, async (_req, res) => {
+  try {
+    let rows;
+    try {
+      rows = await queryFlux(`
+from(bucket: "${INFLUX_DELIVERABILITY_BUCKET}")
+  |> range(start: -30d)
+  |> filter(fn: (r) => r._measurement == "dmarc_dns_check")
+  |> filter(fn: (r) => r.record_type == "composite_score")
+  |> filter(fn: (r) => r._field == "dmarc_policy" or r._field == "score" or r._field == "spf_valid" or r._field == "dkim_valid" or r._field == "dmarc_valid")
+  |> map(fn: (r) => ({
+      _time: r._time,
+      _measurement: r._measurement,
+      domain: r.domain,
+      _field: r._field,
+      _value: string(v: r._value),
+    }))
+  |> group(columns: ["_measurement", "domain", "_field"])
+  |> last()
+  |> group(columns: ["domain"])
+  |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
+`);
+    } catch (err) {
+      if (err instanceof InfluxError && (err.status === 404 || err.status === 422)) {
+        return res.json({ ok: true, domains: [] });
+      }
+      throw err;
+    }
+    const domains = rows
+      .filter((r) => r.domain)
+      .map((r) => ({
+        domain: r.domain,
+        dmarc_policy: r.dmarc_policy || 'none',
+        score: Math.round(toNumber(r.score)),
+        spf_valid: r.spf_valid === 'true',
+        dkim_valid: r.dkim_valid === 'true',
+        dmarc_valid: r.dmarc_valid === 'true',
+      }));
+    return res.json({ ok: true, domains });
+  } catch (err) {
+    console.error('[dns-status]', err.message);
+    return res.status(500).json({ error: 'Failed to load DNS status' });
+  }
+});
+
+async function _fetchRateWindow(start, stop) {
+  const rangeArgs = stop ? `start: ${start}, stop: ${stop}` : `start: ${start}`;
+  const rows = await queryFlux(`
+from(bucket: "${INFLUX_BUCKET}")
+  |> range(${rangeArgs})
+  |> filter(fn: (r) => r._measurement == "dmarc_aggregate")
+  |> filter(fn: (r) => r._field == "message_count" or r._field == "passed_dmarc")
+  |> map(fn: (r) => ({
+      _time: r._time,
+      _measurement: r._measurement,
+      header_from: r.header_from,
+      _field: r._field,
+      _value: string(v: r._value),
+    }))
+  |> group(columns: ["_measurement", "header_from"])
+  |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
+  |> group(columns: ["header_from"])
+  |> reduce(
+      identity: {header_from: "", total: 0.0, passed: 0.0},
+      fn: (r, accumulator) => ({
+        header_from: r.header_from,
+        total: accumulator.total + (if exists r.message_count then float(v: r.message_count) else 0.0),
+        passed: accumulator.passed + (if exists r.passed_dmarc and r.passed_dmarc == "true" and exists r.message_count then float(v: r.message_count) else 0.0),
+      })
+    )
+  |> keep(columns: ["header_from", "total", "passed"])
+`);
+  const map = {};
+  for (const r of rows) {
+    if (r.header_from) {
+      const total = Math.round(toNumber(r.total));
+      const passed = Math.round(toNumber(r.passed));
+      map[r.header_from] = { total, passed, rate: total > 0 ? Math.round((passed / total) * 100) : 0 };
+    }
+  }
+  return map;
+}
+
+app.get('/api/metrics/domain-trend', authMiddleware, rateLimitMiddleware, async (_req, res) => {
+  try {
+    let current, previous;
+    try {
+      [current, previous] = await Promise.all([
+        _fetchRateWindow('-7d'),
+        _fetchRateWindow('-14d', '-7d'),
+      ]);
+    } catch (err) {
+      if (err instanceof InfluxError && (err.status === 404 || err.status === 422)) {
+        return res.json({ ok: true, trends: [] });
+      }
+      throw err;
+    }
+    const domains = new Set([...Object.keys(current), ...Object.keys(previous)]);
+    const trends = [];
+    for (const domain of domains) {
+      const cur = current[domain] || { rate: 0, total: 0 };
+      const prev = previous[domain] || { rate: 0, total: 0 };
+      if (cur.total === 0 && prev.total === 0) continue;
+      trends.push({
+        domain,
+        currentRate: cur.rate,
+        prevRate: prev.rate,
+        delta: cur.rate - prev.rate,
+      });
+    }
+    return res.json({ ok: true, trends });
+  } catch (err) {
+    console.error('[domain-trend]', err.message);
+    return res.status(500).json({ error: 'Failed to load domain trend' });
+  }
+});
+
+app.get('/api/metrics/warmup-summary', authMiddleware, rateLimitMiddleware, async (_req, res) => {
+  try {
+    let rows;
+    try {
+      rows = await queryFlux(`
+from(bucket: "${INFLUX_DELIVERABILITY_BUCKET}")
+  |> range(start: -48h)
+  |> filter(fn: (r) => r._measurement == "warmup_stats")
+  |> filter(fn: (r) => r._field == "health_score" or r._field == "spam_pct" or r._field == "warmup_enabled")
+  |> map(fn: (r) => ({
+      _time: r._time,
+      _measurement: r._measurement,
+      email: r.email,
+      domain: r.domain,
+      _field: r._field,
+      _value: string(v: r._value),
+    }))
+  |> group(columns: ["_measurement", "email", "domain", "_field"])
+  |> last()
+  |> group(columns: ["email", "domain"])
+  |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
+`);
+    } catch (err) {
+      if (err instanceof InfluxError && (err.status === 404 || err.status === 422)) {
+        return res.json({ ok: true, domains: [] });
+      }
+      throw err;
+    }
+    const domainMap = {};
+    for (const r of rows) {
+      const domain = r.domain;
+      if (!domain) continue;
+      if (!domainMap[domain]) domainMap[domain] = { domain, mailboxes: [] };
+      domainMap[domain].mailboxes.push({
+        email: r.email || '',
+        health_score: toNumber(r.health_score),
+        spam_pct: toNumber(r.spam_pct),
+        warmup_enabled: r.warmup_enabled === '1' || Number(r.warmup_enabled) === 1,
+      });
+    }
+    const domains = Object.values(domainMap).map((d) => {
+      const enabled = d.mailboxes.filter((m) => m.warmup_enabled);
+      const scored = d.mailboxes.filter((m) => m.health_score > 0);
+      const avgHealth = scored.length > 0 ? Math.round(scored.reduce((s, m) => s + m.health_score, 0) / scored.length) : 0;
+      const avgSpam = d.mailboxes.length > 0 ? Math.round((d.mailboxes.reduce((s, m) => s + m.spam_pct, 0) / d.mailboxes.length) * 10) / 10 : 0;
+      return {
+        domain: d.domain,
+        total_mailboxes: d.mailboxes.length,
+        enabled_count: enabled.length,
+        avg_health: avgHealth,
+        avg_spam_pct: avgSpam,
+      };
+    }).sort((a, b) => b.total_mailboxes - a.total_mailboxes);
+    return res.json({ ok: true, domains });
+  } catch (err) {
+    console.error('[warmup-summary]', err.message);
+    return res.status(500).json({ error: 'Failed to load warmup summary' });
+  }
+});
+
+app.get('/api/metrics/dmarc-sources', authMiddleware, rateLimitMiddleware, async (_req, res) => {
+  try {
+    let rows;
+    try {
+      rows = await queryFlux(`
+from(bucket: "${INFLUX_BUCKET}")
+  |> range(start: -30d)
+  |> filter(fn: (r) => r._measurement == "dmarc_aggregate")
+  |> filter(fn: (r) => r._field == "message_count")
+  |> group(columns: ["header_from", "source_ip"])
+  |> sum()
+  |> sort(columns: ["_value"], desc: true)
+  |> limit(n: 500)
+`);
+    } catch (err) {
+      if (err instanceof InfluxError && (err.status === 404 || err.status === 422)) {
+        return res.json({ ok: true, sources: [] });
+      }
+      throw err;
+    }
+    const sources = rows
+      .filter((r) => r.header_from && r.source_ip)
+      .map((r) => ({
+        domain: r.header_from,
+        source_ip: r.source_ip,
+        message_count: Math.round(toNumber(r._value)),
+      }));
+    return res.json({ ok: true, sources });
+  } catch (err) {
+    console.error('[dmarc-sources]', err.message);
+    return res.status(500).json({ error: 'Failed to load DMARC sources' });
+  }
+});
+
 app.use('/api/smartlead', authMiddleware, rateLimitMiddleware, smartleadRouter);
 
 app.use(express.static(distPath));

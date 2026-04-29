@@ -79,14 +79,21 @@ def report_to_lines(report: dict) -> list:
         )
         header_from = escape_tag(header_from)
 
+        source_ip = (record.get("source", {}) or {}).get("ip_address", "") or ""
+        source_ip = escape_tag(source_ip.strip())
+
         count = int(record.get("count", 0))
         passed = str(bool(alignment.get("dmarc", False))).lower()
         spf = str(bool(alignment.get("spf", False))).lower()
         dkim = str(bool(alignment.get("dkim", False))).lower()
         ts_ns = parse_timestamp_ns(record.get("interval_begin", ""))
 
+        tag_set = f"header_from={header_from}"
+        if source_ip:
+            tag_set += f",source_ip={source_ip}"
+
         lines.append(
-            f"dmarc_aggregate,header_from={header_from} "
+            f"dmarc_aggregate,{tag_set} "
             f"message_count={count}i,"
             f"passed_dmarc={passed},"
             f"spf_aligned={spf},"

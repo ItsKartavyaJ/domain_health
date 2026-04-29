@@ -4,6 +4,7 @@ import DateFilter from '../components/DateFilter';
 import Badge from '../components/Badge';
 import SectionLoader from '../components/SectionLoader';
 import { getMailboxHealth, getDomainHealth, getEmailAccounts } from '../api/smartlead';
+import { getWarmupSummary } from '../api/influx';
 import { TODAY, THIRTY_DAYS_AGO } from '../utils/dates';
 
 function rateStatus(rate) {
@@ -56,9 +57,10 @@ export default function Mailboxes() {
   const [startDate, setStartDate] = useState(THIRTY_DAYS_AGO);
   const [endDate, setEndDate]     = useState(TODAY);
 
-  const [mailboxes, setMailboxes]   = useState([]);
-  const [domains, setDomains]       = useState([]);
-  const [accounts, setAccounts]     = useState([]);
+  const [mailboxes, setMailboxes]       = useState([]);
+  const [domains, setDomains]           = useState([]);
+  const [accounts, setAccounts]         = useState([]);
+  const [warmupDomains, setWarmupDomains] = useState([]);
 
   const [healthLoading, setHL] = useState(true);
   const [domLoading, setDoL]   = useState(true);
@@ -96,6 +98,10 @@ export default function Mailboxes() {
       .then((d) => setAccounts(Array.isArray(d) ? d : []))
       .catch(() => setAccounts([]))
       .finally(() => setAL(false));
+
+    getWarmupSummary()
+      .then((d) => setWarmupDomains(Array.isArray(d) ? d : []))
+      .catch(() => setWarmupDomains([]));
   }, []);
 
   function onDateChange(s, e) {
@@ -191,13 +197,13 @@ export default function Mailboxes() {
             <div style={{ fontSize: 14, fontWeight: 600 }}>By Sending Domain</div>
             <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>Top domains by volume</div>
           </div>
-          <div style={{ padding: '4px 0', maxHeight: 260, overflowY: 'auto' }}>
+          <div style={{ padding: '4px 0' }}>
             {domLoading ? <SectionLoader height={120} /> : domError ? (
               <div style={{ padding: '14px 18px', fontSize: 13, color: 'var(--err-text)' }}>{domError}</div>
             ) : domains.length === 0 ? (
               <div style={{ padding: '24px 18px', fontSize: 13, color: 'var(--muted)', textAlign: 'center' }}>No domain data</div>
-            ) : domains.slice(0, 15).map((d, i) => (
-              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 18px', borderBottom: i < domains.length - 1 ? '1px solid var(--border)' : 'none' }}>
+            ) : domains.slice(0, 5).map((d, i) => (
+              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 18px', borderBottom: '1px solid var(--border)' }}>
                 <div style={{ fontSize: 13, fontWeight: 500 }}>{d.domain || 'unknown'}</div>
                 <div style={{ display: 'flex', gap: 12, fontSize: 12 }}>
                   <span style={{ color: 'var(--muted)' }}>{(d.sent || 0).toLocaleString()} sent</span>
@@ -207,8 +213,84 @@ export default function Mailboxes() {
               </div>
             ))}
           </div>
+          {!domLoading && !domError && domains.length > 5 && (
+            <div style={{ padding: '10px 18px', borderTop: '1px solid var(--border)' }}>
+              <button
+                onClick={() => { window.location.hash = 'domains'; }}
+                style={{ fontSize: 12, fontWeight: 500, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+              >
+                View all {domains.length} domains →
+              </button>
+            </div>
+          )}
         </div>
       </div>
+
+      {/* Warmup health summary */}
+      {warmupDomains.length > 0 && (
+        <div style={{ marginBottom: 28 }}>
+          <div style={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
+            <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)' }}>
+              <div style={{ fontSize: 14, fontWeight: 600 }}>Warmup Health by Domain</div>
+              <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>Avg health score and spam % across warmup-enabled mailboxes</div>
+            </div>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ background: 'var(--surface)' }}>
+                    {['Domain', 'Enabled / Total', 'Avg Health', 'Avg Spam %', 'Status'].map((label) => (
+                      <th key={label} style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600, padding: '9px 18px', textAlign: 'left', borderBottom: '1px solid var(--border)', textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap' }}>{label}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {warmupDomains.slice(0, 5).map((d, i) => {
+                    const health = d.avg_health ?? null;
+                    const spam   = d.avg_spam_pct ?? null;
+                    const healthType = health === null ? undefined : health >= 80 ? 'ok' : health >= 60 ? 'warn' : 'err';
+                    const spamType   = spam === null ? undefined : spam <= 1 ? 'ok' : spam <= 3 ? 'warn' : 'err';
+                    return (
+                      <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
+                        <td style={{ padding: '11px 18px', fontSize: 13, fontWeight: 500 }}>{d.domain}</td>
+                        <td style={{ padding: '11px 18px', fontSize: 13 }}>{d.enabled_count} / {d.total_mailboxes}</td>
+                        <td style={{ padding: '11px 18px' }}>
+                          {health !== null ? (
+                            <Badge type={healthType}>{Math.round(health)}</Badge>
+                          ) : <span style={{ fontSize: 13, color: 'var(--muted)' }}>—</span>}
+                        </td>
+                        <td style={{ padding: '11px 18px' }}>
+                          {spam !== null ? (
+                            <Badge type={spamType}>{spam.toFixed(1)}%</Badge>
+                          ) : <span style={{ fontSize: 13, color: 'var(--muted)' }}>—</span>}
+                        </td>
+                        <td style={{ padding: '11px 18px' }}>
+                          {d.enabled_count === 0 ? (
+                            <Badge type="warn">All paused</Badge>
+                          ) : d.enabled_count < d.total_mailboxes ? (
+                            <Badge type="warn">{d.total_mailboxes - d.enabled_count} paused</Badge>
+                          ) : (
+                            <Badge type="ok">All warming</Badge>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            {warmupDomains.length > 5 && (
+              <div style={{ padding: '10px 18px', borderTop: '1px solid var(--border)' }}>
+                <button
+                  onClick={() => { window.location.hash = 'warmup'; }}
+                  style={{ fontSize: 12, fontWeight: 500, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+                >
+                  View all {warmupDomains.length} domains →
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Mailbox table */}
       <div style={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>

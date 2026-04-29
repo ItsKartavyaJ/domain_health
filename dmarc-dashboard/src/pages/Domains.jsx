@@ -3,7 +3,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import DateFilter from '../components/DateFilter';
 import Badge from '../components/Badge';
 import { getDomainHealth } from '../api/smartlead';
-import { getDomainStats, refreshDomainStats } from '../api/influx';
+import { getDomainStats, refreshDomainStats, getDnsStatus } from '../api/influx';
 
 const TODAY = new Date().toISOString().slice(0, 10);
 const THIRTY_DAYS_AGO = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
@@ -65,6 +65,7 @@ export default function Domains() {
 
   const [domainHealth, setDomainHealth] = useState([]);
   const [domainStats, setDomainStats]   = useState([]);
+  const [dnsStatus, setDnsStatus]       = useState([]);
 
   const [healthLoading, setHL] = useState(true);
   const [statsLoading, setSL]  = useState(true);
@@ -90,6 +91,10 @@ export default function Domains() {
       .then((d) => { if (fetchId.current === id) setDomainStats(Array.isArray(d) ? d : []); })
       .catch((err) => { if (fetchId.current === id) setSE(err.message); })
       .finally(() => { if (fetchId.current === id) setSL(false); });
+
+    getDnsStatus()
+      .then((d) => { if (fetchId.current === id) setDnsStatus(Array.isArray(d) ? d : []); })
+      .catch(() => { if (fetchId.current === id) setDnsStatus([]); });
   }
 
   useEffect(() => { fetchAll(THIRTY_DAYS_AGO, TODAY); }, []);
@@ -113,9 +118,15 @@ export default function Domains() {
     setSort((prev) => ({ key, dir: prev.key === key && prev.dir === 'desc' ? 'asc' : 'desc' }));
   }
 
+  const dnsMap = {};
+  for (const d of dnsStatus) { if (d.domain) dnsMap[d.domain.toLowerCase()] = d; }
+
   const merged = (!healthLoading && !statsLoading)
-    ? mergeDomains(domainHealth, domainStats)
-    : healthLoading ? [] : domainHealth.map((h) => ({ ...h, dmarc_rate: 0, spf: '—', dkim: '—', dmarc_status: '—' }));
+    ? mergeDomains(domainHealth, domainStats).map((d) => {
+        const dns = dnsMap[(d.domain || '').toLowerCase()] || {};
+        return { ...d, dmarc_policy: dns.dmarc_policy || null };
+      })
+    : healthLoading ? [] : domainHealth.map((h) => ({ ...h, dmarc_rate: 0, spf: '—', dkim: '—', dmarc_status: '—', dmarc_policy: null }));
 
   const filtered = merged
     .filter((d) => (d.domain || '').toLowerCase().includes(search.toLowerCase()))
@@ -257,6 +268,7 @@ export default function Domains() {
                     { key: 'bounced', label: 'Bounced' },
                     { key: 'bounce_rate', label: 'Bounce Rate' },
                     { key: 'dmarc_rate', label: 'DMARC Pass' },
+                    { key: 'dmarc_policy', label: 'Policy' },
                     { key: 'spf', label: 'SPF' },
                     { key: 'dkim', label: 'DKIM' },
                     { key: 'dmarc_status', label: 'Status' },
@@ -273,7 +285,7 @@ export default function Domains() {
               </thead>
               <tbody>
                 {filtered.length === 0 && (
-                  <tr><td colSpan={11} style={{ padding: '32px 18px', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>No domains found</td></tr>
+                  <tr><td colSpan={12} style={{ padding: '32px 18px', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>No domains found</td></tr>
                 )}
                 {filtered.map((d, i) => {
                   const bounceRate = d.bounce_rate || 0;
@@ -297,8 +309,19 @@ export default function Domains() {
                           <Badge type={dmarcType}>{Math.round(dmarcRate)}%</Badge>
                         ) : <span style={{ fontSize: 13, color: 'var(--muted)' }}>—</span>}
                       </td>
-                      <td style={{ padding: '12px 14px', fontSize: 12, color: d.spf === 'pass' ? 'var(--ok-text)' : d.spf === 'fail' ? 'var(--err-text)' : 'var(--muted)', fontWeight: 500 }}>{d.spf}</td>
-                      <td style={{ padding: '12px 14px', fontSize: 12, color: d.dkim === 'pass' ? 'var(--ok-text)' : d.dkim === 'fail' ? 'var(--err-text)' : 'var(--muted)', fontWeight: 500 }}>{d.dkim}</td>
+                      <td style={{ padding: '12px 14px' }}>
+                        {d.dmarc_policy === 'reject' ? (
+                          <Badge type="ok">reject</Badge>
+                        ) : d.dmarc_policy === 'quarantine' ? (
+                          <Badge type="warn">quarantine</Badge>
+                        ) : d.dmarc_policy === 'none' ? (
+                          <Badge type="err">none</Badge>
+                        ) : (
+                          <span style={{ fontSize: 13, color: 'var(--muted)' }}>—</span>
+                        )}
+                      </td>
+                      <td style={{ padding: '12px 14px', fontSize: 12, color: d.spf === 'Pass' ? 'var(--ok-text)' : d.spf === 'Fail' ? 'var(--err-text)' : 'var(--muted)', fontWeight: 500 }}>{d.spf}</td>
+                      <td style={{ padding: '12px 14px', fontSize: 12, color: d.dkim === 'Pass' ? 'var(--ok-text)' : d.dkim === 'Fail' ? 'var(--err-text)' : 'var(--muted)', fontWeight: 500 }}>{d.dkim}</td>
                       <td style={{ padding: '12px 14px', fontSize: 12, color: 'var(--muted)' }}>{d.dmarc_status}</td>
                     </tr>
                   );

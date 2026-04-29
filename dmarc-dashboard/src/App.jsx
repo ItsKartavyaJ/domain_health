@@ -6,6 +6,9 @@ import Mailboxes from './pages/Mailboxes';
 import Campaigns from './pages/Campaigns';
 import Domains from './pages/Domains';
 import Login from './pages/Login';
+import BlacklistStatus from './pages/BlacklistStatus';
+import DnsStatus from './pages/DnsStatus';
+import WarmupDetail from './pages/WarmupDetail';
 
 const tabs = [
   { key: 'overview', label: 'Overview' },
@@ -15,7 +18,7 @@ const tabs = [
   { key: 'domains', label: 'Domains' },
 ];
 
-const VALID_TABS = new Set(tabs.map((t) => t.key));
+const VALID_TABS = new Set([...tabs.map((t) => t.key), 'blacklist', 'dns-status', 'warmup']);
 
 function getHashTab() {
   const hash = window.location.hash.slice(1);
@@ -28,6 +31,9 @@ const tabComponents = {
   mailboxes: Mailboxes,
   campaigns: Campaigns,
   domains: Domains,
+  blacklist: BlacklistStatus,
+  'dns-status': DnsStatus,
+  warmup: WarmupDetail,
 };
 
 export default function App() {
