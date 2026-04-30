@@ -88,9 +88,15 @@ npm run start:api     # Prod: serve API + built frontend
 - InfluxDB token never exposed to the browser
 
 ### dmarc-dashboard Pages
+- **Overview** — Summary cards, issues panel, domain health at a glance; ↻ Refresh button force-busts server + client cache
 - **Mailboxes** — Real-time mailbox status with clickable filter pills (active/idle/disconnected); "By Sending Domain" card full width
 - **Domains** — Merges Smartlead domain health data with InfluxDB DMARC stats in an 11-column searchable/sortable table; includes SPF validation status, DKIM checks, DMARC alignment, and historical charts (DMARC pass rate, domain reputation trend)
 - **Campaigns** — Campaign metrics from Smartlead; deliverability trends
+- **Sender Health** (`#sender-health`) — Domain-level reply rate, bounce rate, and positive reply rate table (sortable); click any domain row to expand and see per-mailbox stats (Sent, Inbox %, Spam %, Bounce %, Health Score, Warmup Status)
+- **Issues** (`#issues`) — Full list of DMARC/SPF/DKIM issues with severity filter and search; expandable rows with fix guidance and unauthorized IPs
+- **Warmup Health** (`#warmup`) — Domain-level warmup stats: enabled mailbox count, avg health score, avg spam rate
+- **DNS Status** (`#dns-status`) — SPF/DKIM/DMARC DNS validity per domain
+- **Blacklist Status** (`#blacklist`) — URL-accessible only (removed from main nav); shows RBL detections
 
 ### dmarc-dashboard Caching Architecture
 - **Client-side cache** (`src/api/cache.js`) — 90-minute TTL in-memory cache with inflight request deduplication; used by all `src/api/smartlead.js` and `src/api/influx.js` functions

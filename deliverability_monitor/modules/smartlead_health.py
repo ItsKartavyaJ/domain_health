@@ -7,6 +7,10 @@ Two grains:
   - grain=domain   one row per sending domain (from domain-wise endpoint)
   - grain=mailbox  one row per email address  (from name-wise endpoint)
 
+API response shape (actual, as of 2026-04):
+  domain-wise: {"data": {"domain_health_metrics": [{domain, sent, opened, clicked, replied, unsubscribed, bounced}, ...]}}
+  name-wise:   {"data": {"email_health_metrics":  [{from_email, sent, opened, clicked, replied, unsubscribed, bounced}, ...]}}
+
 Run standalone:  python -m modules.smartlead_health
 Called by:       scheduler.py every SMARTLEAD_POLL_INTERVAL_HOURS
 """
@@ -53,20 +57,32 @@ class SmartleadClient:
             log.error("Smartlead request failed %s: %s", path, e)
             return None
 
-    def _normalise_list(self, data, *extra_keys) -> List[Dict]:
-        """Coerce API response to a list of dicts regardless of envelope shape."""
+    def _extract_list(self, data, list_key: str) -> List[Dict]:
+        """
+        Extract a named list from Smartlead's nested envelope shapes:
+          {list_key: [...]}
+          {"data": {list_key: [...]}}
+          {"data": [...]}
+          bare list
+        """
         if isinstance(data, list):
             return data
-        # Try caller-supplied keys first, then generic envelopes
-        for key in (*extra_keys, "data", "results"):
-            val = data.get(key)
-            if isinstance(val, list):
-                return val
-            if isinstance(val, dict):
-                return [val]
-        # Bare dict — treat as single row
-        if isinstance(data, dict):
-            return [data]
+        if not isinstance(data, dict):
+            return []
+        # Top-level named key: {list_key: [...]}
+        if list_key in data:
+            val = data[list_key]
+            return val if isinstance(val, list) else ([val] if isinstance(val, dict) else [])
+        # One level down: {"data": {list_key: [...]}} or {"data": [...]}
+        inner = data.get("data") or data.get("results")
+        if isinstance(inner, list):
+            return inner
+        if isinstance(inner, dict):
+            if list_key in inner:
+                val = inner[list_key]
+                return val if isinstance(val, list) else ([val] if isinstance(val, dict) else [])
+            # Last resort: bare inner dict is a single row
+            return [inner]
         return []
 
     def fetch_domain_health(self) -> Optional[List[Dict]]:
@@ -74,10 +90,8 @@ class SmartleadClient:
         data = self._get("/analytics/mailbox/domain-wise-health-metrics")
         if data is None:
             return None
-        rows = self._normalise_list(data, "domain_health_metrics")
-        log.info("domain-wise raw response type=%s len=%d", type(data).__name__, len(rows))
-        if rows:
-            log.info("domain-wise first row: %s", rows[0])
+        rows = self._extract_list(data, "domain_health_metrics")
+        log.info("domain-wise fetched %d rows", len(rows))
         return rows
 
     def fetch_name_health(self) -> Optional[List[Dict]]:
@@ -85,60 +99,78 @@ class SmartleadClient:
         data = self._get("/analytics/mailbox/name-wise-health-metrics")
         if data is None:
             return None
-        rows = self._normalise_list(data, "email_health_metrics")
-        log.info("name-wise raw response type=%s len=%d", type(data).__name__, len(rows))
-        if rows:
-            log.info("name-wise first row: %s", rows[0])
+        rows = self._extract_list(data, "email_health_metrics")
+        log.info("name-wise fetched %d rows", len(rows))
         return rows
 
     def fetch_mailbox_overall(self) -> Optional[Dict]:
         """GET /analytics/mailbox/overall-stats — account-wide totals"""
         return self._get("/analytics/mailbox/overall-stats")
 
+
+def _rate(count: int, sent: int) -> float:
+    """Compute percentage from count/sent, avoiding division by zero."""
+    return round(count / sent * 100, 2) if sent > 0 else 0.0
+
+
 def parse_domain_row(row: Dict) -> Dict:
     """
     Normalize one row from domain-wise-health-metrics.
-    Field names are inferred from Smartlead's API pattern —
-    adjust keys if your live response differs.
+    Actual API fields: domain, sent, opened, clicked, replied, unsubscribed, bounced
+    Rates are computed from counts; inbox/spam not provided by this endpoint.
     """
+    sent    = _safe_int(row.get("sent",    row.get("sent_count",   row.get("total_sent"))))
+    bounced = _safe_int(row.get("bounced", row.get("bounce_count", row.get("total_bounce"))))
+    replied = _safe_int(row.get("replied", row.get("reply_count")))
+    opened  = _safe_int(row.get("opened",  row.get("open_count")))
+
+    bounce_rate = _safe_float(row.get("bounce_rate", row.get("bounce_percentage"))) or _rate(bounced, sent)
+    reply_rate  = _safe_float(row.get("reply_rate",  row.get("reply_percentage")))  or _rate(replied, sent)
+    open_rate   = _safe_float(row.get("open_rate",   row.get("open_percentage")))   or _rate(opened,  sent)
+
     return {
-        "domain": str(row.get("domain", row.get("sending_domain", "unknown"))),
-        "sent_count": _safe_int(row.get("sent_count", row.get("total_sent"))),
-        "inbox_count": _safe_int(row.get("inbox_count", row.get("total_inbox"))),
-        "spam_count": _safe_int(row.get("spam_count", row.get("total_spam"))),
-        "inbox_pct": _safe_float(row.get("inbox_percentage", row.get("inbox_pct", row.get("inbox_rate")))),
-        "spam_pct": _safe_float(row.get("spam_percentage", row.get("spam_pct", row.get("spam_rate")))),
-        "bounce_count": _safe_int(row.get("bounce_count", row.get("total_bounce"))),
-        "bounce_rate": _safe_float(row.get("bounce_rate", row.get("bounce_percentage"))),
-        "open_rate": _safe_float(row.get("open_rate", row.get("open_percentage"))),
-        "reply_rate": _safe_float(row.get("reply_rate", row.get("reply_percentage"))),
-        "positive_reply_rate": _safe_float(row.get("positive_reply_rate", row.get("positive_reply_percentage", row.get("positive_reply_pct", 0.0)))),
-        "mailbox_count": _safe_int(row.get("mailbox_count", row.get("email_count", 1))),
+        "domain":              str(row.get("domain", row.get("sending_domain", "unknown"))),
+        "sent_count":          sent,
+        "inbox_count":         _safe_int(row.get("inbox_count",  row.get("total_inbox"))),
+        "spam_count":          _safe_int(row.get("spam_count",   row.get("total_spam"))),
+        "inbox_pct":           _safe_float(row.get("inbox_percentage", row.get("inbox_pct",  row.get("inbox_rate")))),
+        "spam_pct":            _safe_float(row.get("spam_percentage",  row.get("spam_pct",   row.get("spam_rate")))),
+        "bounce_count":        bounced,
+        "bounce_rate":         bounce_rate,
+        "open_rate":           open_rate,
+        "reply_rate":          reply_rate,
+        "positive_reply_rate": _safe_float(row.get("positive_reply_rate", row.get("positive_reply_percentage", 0.0))),
+        "mailbox_count":       _safe_int(row.get("mailbox_count", row.get("email_count", 1))),
     }
 
 
 def parse_mailbox_row(row: Dict) -> Dict:
     """
     Normalize one row from name-wise-health-metrics.
+    Actual API fields: from_email, sent, opened, clicked, replied, unsubscribed, bounced
     """
-    email = str(row.get("email", row.get("email_address", row.get("from_email", "unknown"))))
+    email  = str(row.get("from_email", row.get("email", row.get("email_address", "unknown"))))
     domain = email.split("@")[-1] if "@" in email else "unknown"
-    spam_pct = _safe_float(row.get("spam_percentage", row.get("spam_pct", row.get("spam_rate"))))
-    inbox_pct = _safe_float(row.get("inbox_percentage", row.get("inbox_pct", row.get("inbox_rate"))))
-    bounce_rate = _safe_float(row.get("bounce_rate", row.get("bounce_percentage")))
+
+    sent    = _safe_int(row.get("sent",    row.get("sent_count",   row.get("total_sent"))))
+    bounced = _safe_int(row.get("bounced", row.get("bounce_count")))
+
+    spam_pct    = _safe_float(row.get("spam_percentage",  row.get("spam_pct",  row.get("spam_rate"))))
+    inbox_pct   = _safe_float(row.get("inbox_percentage", row.get("inbox_pct", row.get("inbox_rate"))))
+    bounce_rate = _safe_float(row.get("bounce_rate", row.get("bounce_percentage"))) or _rate(bounced, sent)
 
     health_score = _health_score(inbox_pct, spam_pct, bounce_rate)
 
     return {
-        "email": email,
-        "domain": domain,
-        "sent_count": _safe_int(row.get("sent_count", row.get("total_sent"))),
-        "inbox_pct": inbox_pct,
-        "spam_pct": spam_pct,
-        "bounce_rate": bounce_rate,
-        "warmup_status": str(row.get("warmup_status", row.get("warmup_enabled", "unknown"))),
-        "tag": str(row.get("tag", row.get("tags", ""))),
-        "health_score": round(health_score, 2),
+        "email":          email,
+        "domain":         domain,
+        "sent_count":     sent,
+        "inbox_pct":      inbox_pct,
+        "spam_pct":       spam_pct,
+        "bounce_rate":    bounce_rate,
+        "warmup_status":  str(row.get("warmup_status", row.get("warmup_enabled", "unknown"))),
+        "tag":            str(row.get("tag", row.get("tags", ""))),
+        "health_score":   round(health_score, 2),
     }
 
 
@@ -156,8 +188,6 @@ def run() -> dict:
     # ── Domain-grain ───────────────────────────────────────────────────────
     domain_rows = client.fetch_domain_health()
     if domain_rows:
-        log.info("Fetched %d domain-wise rows from Smartlead", len(domain_rows))
-        log.info("domain-wise first raw row keys: %s", list(domain_rows[0].keys()) if domain_rows else [])
         for raw in domain_rows:
             if not isinstance(raw, dict):
                 log.warning("Skipping non-dict domain row (type=%s): %r", type(raw).__name__, raw)
@@ -165,13 +195,10 @@ def run() -> dict:
             try:
                 row = parse_domain_row(raw)
                 points.append(writer.smartlead_domain_point(**row))
-
-                log.info(
-                    "%s — sent:%d inbox:%.1f%% spam:%.1f%% bounce:%.1f%%",
-                    row["domain"], row["sent_count"],
-                    row["inbox_pct"], row["spam_pct"], row["bounce_rate"],
+                log.debug(
+                    "%s — sent:%d reply:%.1f%% bounce:%.1f%%",
+                    row["domain"], row["sent_count"], row["reply_rate"], row["bounce_rate"],
                 )
-
                 if row["spam_pct"] >= alert_cfg.spam_pct_threshold:
                     alert_domains.append(row)
             except Exception as e:
@@ -182,8 +209,6 @@ def run() -> dict:
     # ── Mailbox-grain ──────────────────────────────────────────────────────
     mailbox_rows = client.fetch_name_health()
     if mailbox_rows:
-        log.info("Fetched %d name-wise rows from Smartlead", len(mailbox_rows))
-        log.info("name-wise first raw row keys: %s", list(mailbox_rows[0].keys()) if mailbox_rows else [])
         for raw in mailbox_rows:
             if not isinstance(raw, dict):
                 log.warning("Skipping non-dict mailbox row (type=%s): %r", type(raw).__name__, raw)
@@ -226,8 +251,8 @@ def run() -> dict:
     }
 
     log.info(
-        "=== Smartlead Poller done: %d domain rows, %d mailbox rows, %d alerts (%.1fs) ===",
-        summary["domain_rows"], summary["mailbox_rows"],
+        "=== Smartlead Poller done: %d domain rows, %d mailbox rows, %d points, %d alerts (%.1fs) ===",
+        summary["domain_rows"], summary["mailbox_rows"], summary["influx_points_written"],
         summary["domain_alerts"], summary["duration_seconds"],
     )
     return summary

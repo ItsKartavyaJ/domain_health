@@ -36,7 +36,12 @@
       "Bash(powershell.exe *)",
       "Bash(xargs grep *)",
       "Bash(awk -F\"'\" '{print $2}')",
-      "Bash(awk '{print $3}')"
+      "Bash(awk '{print $3}')",
+      "PowerShell(python -c \"from graphify import export; print\\(dir\\(export\\)\\)\")",
+      "PowerShell(python -c \"from graphify import build, cluster, analyze, report; print\\('build:', [x for x in dir\\(build\\) if not x.startswith\\('_'\\)]\\); print\\('cluster:', [x for x in dir\\(cluster\\) if not x.startswith\\('_'\\)]\\); print\\('analyze:', [x for x in dir\\(analyze\\) if not x.startswith\\('_'\\)]\\); print\\('report:', [x for x in dir\\(report\\) if not x.startswith\\('_'\\)]\\)\")",
+      "PowerShell(python run_ast.py 2>&1)",
+      "PowerShell(python run_cache_check.py 2>&1)",
+      "PowerShell(python -c \"import json; print\\('ok'\\)\")"
     ]
   },
   "enableAllProjectMcpServers": true,
