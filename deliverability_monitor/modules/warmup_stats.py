@@ -66,6 +66,13 @@ def parse_warmup(account_id: int, email: str, raw: Dict, warmup_active: bool = T
     """
     total_sent = _safe_int(raw.get("total_sent", 0))
     spam_count = _safe_int(raw.get("spam_count", 0))
+
+    # API sometimes returns 0 at root level; actual data lives in daily_stats[]
+    daily = raw.get("daily_stats") or []
+    if total_sent == 0 and daily:
+        total_sent = sum(_safe_int(d.get("sent", 0)) for d in daily)
+        spam_count = sum(_safe_int(d.get("spam", 0)) for d in daily)
+
     inbox_count = max(0, total_sent - spam_count)
 
     spam_pct  = round(spam_count  / total_sent * 100, 2) if total_sent > 0 else 0.0
