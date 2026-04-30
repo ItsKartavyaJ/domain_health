@@ -28,10 +28,10 @@ import requests
 from influxdb_client import Point, WritePrecision
 
 from config.settings import smartlead as sl_cfg, alerts as alert_cfg
-from modules.domain_discovery import get_mailboxes
+from modules.domain_discovery import get_mailboxes, get_warmup_status_map
 from modules.influx_writer import writer
 from modules.alerter import send_alert
-from modules.utils import safe_float as _safe_float, safe_int as _safe_int, health_score as _health_score
+from modules.utils import safe_float as _safe_float, safe_int as _safe_int
 
 log = logging.getLogger(__name__)
 
@@ -55,45 +55,24 @@ def fetch_warmup_stats(account_id: int) -> Optional[Dict]:
         return None
 
 
-_WARMUP_ACTIVE = {"true", "1", "active", "enabled"}
-
-def _is_warmup_enabled(raw: Dict, api_returned_data: bool = True) -> bool:
-    # If the API returned data at all, warmup is configured (404 = not configured → raw=None → never called)
-    # Prefer warmup_status field if present, then warmup_enabled, then fall back to api_returned_data
-    status = str(raw.get("warmup_status", "")).lower()
-    if status in _WARMUP_ACTIVE:
-        return True
-    if status in {"paused", "false", "0", "disabled"}:
-        return False
-    val = raw.get("warmup_enabled", None)
-    if val is None:
-        return api_returned_data  # no field → trust that API returned data = warmup is active
-    if isinstance(val, bool):
-        return val
-    return str(val).lower() in _WARMUP_ACTIVE
-
-
-def parse_warmup(account_id: int, email: str, raw: Dict) -> Dict:
+def parse_warmup(account_id: int, email: str, raw: Dict, warmup_active: bool = True) -> Dict:
     """
-    Normalize Smartlead warmup-stats response into a flat dict.
-    The API returns last 7 days of warmup send/inbox/spam counts.
-    Field names vary — we probe multiple keys for resilience.
+    Normalize Smartlead /warmup-stats response into a flat dict.
+
+    Actual API fields (from Smartlead docs):
+      total_sent, spam_count, reputation_score, daily_stats[]
+    inbox_count is derived: total_sent - spam_count (API doesn't provide it separately).
+    warmup_active comes from warmup_details.status on the /email-accounts/ response.
     """
-    # Total counts across the 7-day window
-    total_sent  = _safe_int(raw.get("total_sent",  raw.get("sent_count",  raw.get("total", 0))))
-    inbox_count = _safe_int(raw.get("inbox_count", raw.get("total_inbox", raw.get("inbox", 0))))
-    spam_count  = _safe_int(raw.get("spam_count",  raw.get("total_spam",  raw.get("spam",  0))))
+    total_sent = _safe_int(raw.get("total_sent", 0))
+    spam_count = _safe_int(raw.get("spam_count", 0))
+    inbox_count = max(0, total_sent - spam_count)
 
-    # Percentages — use API value if present, else compute
-    inbox_pct = _safe_float(raw.get("inbox_percentage", raw.get("inbox_pct")))
-    spam_pct  = _safe_float(raw.get("spam_percentage",  raw.get("spam_pct")))
+    spam_pct  = round(spam_count  / total_sent * 100, 2) if total_sent > 0 else 0.0
+    inbox_pct = round(inbox_count / total_sent * 100, 2) if total_sent > 0 else 0.0
 
-    if inbox_pct == 0 and total_sent > 0:
-        inbox_pct = round(inbox_count / total_sent * 100, 2)
-    if spam_pct == 0 and total_sent > 0:
-        spam_pct = round(spam_count / total_sent * 100, 2)
-
-    health_score = _health_score(inbox_pct, spam_pct)
+    # reputation_score is provided directly (0–100 number)
+    health_score = _safe_float(raw.get("reputation_score", 0))
 
     domain = email.split("@")[1] if "@" in email else "unknown"
 
@@ -101,7 +80,7 @@ def parse_warmup(account_id: int, email: str, raw: Dict) -> Dict:
         "account_id": account_id,
         "email": email,
         "domain": domain,
-        "warmup_enabled": _is_warmup_enabled(raw, api_returned_data=True),
+        "warmup_enabled": warmup_active,
         "total_sent": total_sent,
         "inbox_count": inbox_count,
         "spam_count": spam_count,
@@ -143,6 +122,12 @@ def run() -> dict:
 
     log.info("Fetching warmup stats for %d mailboxes (workers=%d)", len(mailboxes), MAX_WORKERS)
 
+    # Build warmup status lookup from /email-accounts/ cache (warmup_details.status)
+    warmup_status_map = get_warmup_status_map()
+    log.info("Warmup status map: %d entries, ACTIVE=%d",
+             len(warmup_status_map),
+             sum(1 for s in warmup_status_map.values() if s == "ACTIVE"))
+
     points = []
     results = []
     critical = []   # spam_pct > threshold
@@ -169,7 +154,8 @@ def run() -> dict:
                 log.debug("%s — no warmup data (warmup not enabled or no sends)", email)
             else:
                 try:
-                    data = parse_warmup(int(account_id), email, raw)
+                    warmup_active = warmup_status_map.get(int(account_id), "") == "ACTIVE"
+                    data = parse_warmup(int(account_id), email, raw, warmup_active=warmup_active)
                     results.append(data)
                     points.append(build_point(data))
                     log.info(

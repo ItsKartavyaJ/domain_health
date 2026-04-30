@@ -249,3 +249,20 @@ def get_mailbox_ids() -> List[int]:
         for mb in get_mailboxes()
         if mb.get("id")
     ]
+
+
+def get_warmup_status_map() -> Dict[int, str]:
+    """
+    Return {account_id: warmup_status_string} from cached mailbox objects.
+    Status comes from warmup_details.status on the /email-accounts/ response.
+    Possible values: "ACTIVE", "INACTIVE", "PAUSED" (or "" if not configured).
+    """
+    result: Dict[int, str] = {}
+    for mb in get_mailboxes():
+        acct_id = mb.get("id")
+        if not acct_id:
+            continue
+        wd = mb.get("warmup_details") or {}
+        status = str(wd.get("status", "")).upper() if wd else ""
+        result[int(acct_id)] = status
+    return result
