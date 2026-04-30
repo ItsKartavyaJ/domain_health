@@ -57,12 +57,17 @@ def fetch_warmup_stats(account_id: int) -> Optional[Dict]:
 
 _WARMUP_ACTIVE = {"true", "1", "active", "enabled"}
 
-def _is_warmup_enabled(raw: Dict) -> bool:
-    # warmup_status ("active"/"paused") is more reliable than the warmup_enabled bool
+def _is_warmup_enabled(raw: Dict, api_returned_data: bool = True) -> bool:
+    # If the API returned data at all, warmup is configured (404 = not configured → raw=None → never called)
+    # Prefer warmup_status field if present, then warmup_enabled, then fall back to api_returned_data
     status = str(raw.get("warmup_status", "")).lower()
     if status in _WARMUP_ACTIVE:
         return True
-    val = raw.get("warmup_enabled", raw.get("status", ""))
+    if status in {"paused", "false", "0", "disabled"}:
+        return False
+    val = raw.get("warmup_enabled", None)
+    if val is None:
+        return api_returned_data  # no field → trust that API returned data = warmup is active
     if isinstance(val, bool):
         return val
     return str(val).lower() in _WARMUP_ACTIVE
@@ -96,7 +101,7 @@ def parse_warmup(account_id: int, email: str, raw: Dict) -> Dict:
         "account_id": account_id,
         "email": email,
         "domain": domain,
-        "warmup_enabled": _is_warmup_enabled(raw),
+        "warmup_enabled": _is_warmup_enabled(raw, api_returned_data=True),
         "total_sent": total_sent,
         "inbox_count": inbox_count,
         "spam_count": spam_count,
