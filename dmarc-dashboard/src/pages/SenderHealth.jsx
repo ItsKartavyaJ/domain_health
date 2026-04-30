@@ -2,6 +2,26 @@ import { useEffect, useState } from 'react';
 import Badge from '../components/Badge';
 import { getSenderHealth } from '../api/influx';
 
+function Sparkline({ values, width = 80, height = 28 }) {
+  if (!values || values.length < 2) return <span style={{ fontSize: 11, color: 'var(--muted)' }}>—</span>;
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min || 1;
+  const pts = values.map((v, i) => {
+    const x = (i / (values.length - 1)) * width;
+    const y = height - ((v - min) / range) * (height - 4) - 2;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  });
+  const last = values[values.length - 1];
+  const prev = values[values.length - 2];
+  const color = last >= prev ? 'var(--ok-text)' : 'var(--err-text)';
+  return (
+    <svg width={width} height={height} style={{ display: 'block' }}>
+      <polyline points={pts.join(' ')} fill="none" stroke={color} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 function SortIcon({ active, dir }) {
   if (!active) return <span style={{ color: 'var(--border)', marginLeft: 3 }}>⇅</span>;
   return <span style={{ marginLeft: 3 }}>{dir === 'desc' ? '▼' : '▲'}</span>;
@@ -57,18 +77,21 @@ function MailboxTable({ mailboxes }) {
   );
 }
 
+const GRID = '1fr 80px 90px 90px 90px 90px 90px 32px';
+
 function DomainRow({ d, last }) {
   const [open, setOpen] = useState(false);
 
   const replyType = d.reply_rate >= 10 ? 'ok' : d.reply_rate >= 5 ? 'warn' : 'err';
   const bounceType = d.bounce_rate <= 2 ? 'ok' : d.bounce_rate <= 5 ? 'warn' : 'err';
   const posReplyType = d.positive_reply_rate >= 5 ? 'ok' : d.positive_reply_rate >= 2 ? 'warn' : 'err';
+  const spamType = (d.spam_pct || 0) <= 1 ? 'ok' : (d.spam_pct || 0) <= 3 ? 'warn' : 'err';
 
   return (
     <div style={{ borderBottom: last ? 'none' : '1px solid var(--border)' }}>
       <div
         onClick={() => setOpen((o) => !o)}
-        style={{ display: 'grid', gridTemplateColumns: '1fr 120px 120px 140px 32px', alignItems: 'center', padding: '13px 18px', cursor: 'pointer', userSelect: 'none', gap: 8 }}
+        style={{ display: 'grid', gridTemplateColumns: GRID, alignItems: 'center', padding: '13px 18px', cursor: 'pointer', userSelect: 'none', gap: 8 }}
       >
         <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {d.domain}
@@ -76,6 +99,7 @@ function DomainRow({ d, last }) {
             <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 400, color: 'var(--muted)' }}>{d.mailboxes.length} mailbox{d.mailboxes.length !== 1 ? 'es' : ''}</span>
           )}
         </div>
+        <div style={{ fontSize: 12, color: 'var(--muted)' }}>{(d.sent_count || 0).toLocaleString()}</div>
         <div><Badge type={replyType}>{d.reply_rate.toFixed(1)}%</Badge></div>
         <div><Badge type={bounceType}>{d.bounce_rate.toFixed(1)}%</Badge></div>
         <div>
@@ -84,20 +108,34 @@ function DomainRow({ d, last }) {
             : <span style={{ fontSize: 12, color: 'var(--muted)' }}>—</span>
           }
         </div>
-        <svg
-          width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2"
-          strokeLinecap="round" strokeLinejoin="round"
-          style={{ flexShrink: 0, transition: 'transform 0.15s', transform: open ? 'rotate(180deg)' : 'rotate(0deg)', color: 'var(--muted)' }}
-        >
-          <polyline points="2,4 6,8 10,4" />
-        </svg>
+        <div>
+          {(d.open_rate || 0) > 0
+            ? <span style={{ fontSize: 12, color: 'var(--text)' }}>{d.open_rate.toFixed(1)}%</span>
+            : <span style={{ fontSize: 12, color: 'var(--muted)' }}>—</span>
+          }
+        </div>
+        <div>
+          {(d.spam_pct || 0) > 0
+            ? <Badge type={spamType}>{d.spam_pct.toFixed(1)}%</Badge>
+            : <span style={{ fontSize: 12, color: 'var(--muted)' }}>—</span>
+          }
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+          <svg
+            width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2"
+            strokeLinecap="round" strokeLinejoin="round"
+            style={{ flexShrink: 0, transition: 'transform 0.15s', transform: open ? 'rotate(180deg)' : 'rotate(0deg)', color: 'var(--muted)' }}
+          >
+            <polyline points="2,4 6,8 10,4" />
+          </svg>
+        </div>
       </div>
       {open && <MailboxTable mailboxes={d.mailboxes} />}
     </div>
   );
 }
 
-const SORT_KEYS = ['reply_rate', 'bounce_rate', 'positive_reply_rate'];
+const SORT_KEYS = ['sent_count', 'reply_rate', 'bounce_rate', 'positive_reply_rate', 'open_rate', 'spam_pct'];
 
 export default function SenderHealth() {
   const [domains, setDomains] = useState([]);
@@ -137,9 +175,12 @@ export default function SenderHealth() {
 
   const columns = [
     { key: 'domain', label: 'Domain', sortable: false },
-    { key: 'reply_rate', label: 'Reply Rate', sortable: true },
-    { key: 'bounce_rate', label: 'Bounce Rate', sortable: true },
-    { key: 'positive_reply_rate', label: 'Positive Reply Rate', sortable: true },
+    { key: 'sent_count', label: 'Sent', sortable: true },
+    { key: 'reply_rate', label: 'Reply %', sortable: true },
+    { key: 'bounce_rate', label: 'Bounce %', sortable: true },
+    { key: 'positive_reply_rate', label: 'Pos. Reply', sortable: true },
+    { key: 'open_rate', label: 'Open %', sortable: true },
+    { key: 'spam_pct', label: 'Spam %', sortable: true },
     { key: '_expand', label: '', sortable: false },
   ];
 
@@ -187,7 +228,7 @@ export default function SenderHealth() {
           <>
             {/* Table header */}
             <div style={{
-              display: 'grid', gridTemplateColumns: '1fr 120px 120px 140px 32px',
+              display: 'grid', gridTemplateColumns: GRID,
               padding: '9px 18px', gap: 8,
               background: 'var(--surface)', borderBottom: '1px solid var(--border)',
             }}>

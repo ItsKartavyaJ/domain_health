@@ -646,15 +646,15 @@ from(bucket: "${INFLUX_BUCKET}")
 
 app.get('/api/metrics/sender-health', authMiddleware, rateLimitMiddleware, async (_req, res) => {
   try {
-    let domainRows, mailboxRows;
+    let domainRows, mailboxRows, trendRows;
     try {
-      [domainRows, mailboxRows] = await Promise.all([
+      [domainRows, mailboxRows, trendRows] = await Promise.all([
         queryFlux(`
 from(bucket: "${INFLUX_DELIVERABILITY_BUCKET}")
   |> range(start: -48h)
   |> filter(fn: (r) => r._measurement == "smartlead_health")
   |> filter(fn: (r) => r.grain == "domain")
-  |> filter(fn: (r) => r._field == "reply_rate" or r._field == "bounce_rate" or r._field == "positive_reply_rate" or r._field == "sent_count" or r._field == "inbox_pct" or r._field == "spam_pct")
+  |> filter(fn: (r) => r._field == "reply_rate" or r._field == "bounce_rate" or r._field == "positive_reply_rate" or r._field == "sent_count" or r._field == "inbox_pct" or r._field == "spam_pct" or r._field == "open_rate")
   |> map(fn: (r) => ({
       _time: r._time,
       _measurement: r._measurement,
@@ -686,12 +686,30 @@ from(bucket: "${INFLUX_DELIVERABILITY_BUCKET}")
   |> group(columns: ["email", "domain"])
   |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
 `),
+        queryFlux(`
+from(bucket: "${INFLUX_DELIVERABILITY_BUCKET}")
+  |> range(start: -30d)
+  |> filter(fn: (r) => r._measurement == "smartlead_health")
+  |> filter(fn: (r) => r.grain == "domain")
+  |> filter(fn: (r) => r._field == "reply_rate")
+  |> group(columns: ["domain"])
+  |> aggregateWindow(every: 1d, fn: last, createEmpty: false)
+  |> map(fn: (r) => ({domain: r.domain, _time: r._time, _value: r._value}))
+`),
       ]);
     } catch (err) {
       if (err instanceof InfluxError && (err.status === 404 || err.status === 422)) {
         return res.json({ ok: true, domains: [] });
       }
       throw err;
+    }
+
+    // Build reply_rate trend map: { domain -> [v1, v2, ...] } (chronological, last 30d)
+    const trendMap = {};
+    for (const r of trendRows) {
+      if (!r.domain) continue;
+      if (!trendMap[r.domain]) trendMap[r.domain] = [];
+      trendMap[r.domain].push(Math.round(toNumber(r._value) * 10) / 10);
     }
 
     // Build mailbox map keyed by domain
@@ -719,6 +737,10 @@ from(bucket: "${INFLUX_DELIVERABILITY_BUCKET}")
         reply_rate: Math.round(toNumber(r.reply_rate) * 10) / 10,
         bounce_rate: Math.round(toNumber(r.bounce_rate) * 10) / 10,
         positive_reply_rate: Math.round(toNumber(r.positive_reply_rate) * 10) / 10,
+        open_rate: Math.round(toNumber(r.open_rate) * 10) / 10,
+        spam_pct: Math.round(toNumber(r.spam_pct) * 10) / 10,
+        inbox_pct: Math.round(toNumber(r.inbox_pct) * 10) / 10,
+        reply_trend: trendMap[r.domain] || [],
         mailboxes: (mailboxMap[r.domain] || []).sort((a, b) => b.sent_count - a.sent_count),
       }))
       .sort((a, b) => b.sent_count - a.sent_count);

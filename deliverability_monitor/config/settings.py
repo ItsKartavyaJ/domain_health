@@ -42,7 +42,9 @@ SENDING_IPS: List[str] = [
 class SmartleadConfig:
     api_key: str = field(default_factory=lambda: _require_env("SMARTLEAD_API_KEY"))
     base_url: str = "https://server.smartlead.ai/api/v1"
-    lookback_days: int = 7
+    lookback_days: int = field(
+        default_factory=lambda: int(os.getenv("SMARTLEAD_LOOKBACK_DAYS", "30"))
+    )
     # Batch size for warmup stats (per-mailbox calls — space them out)
     warmup_batch_delay_secs: float = field(
         default_factory=lambda: float(os.getenv("WARMUP_BATCH_DELAY_SECS", "0.3"))

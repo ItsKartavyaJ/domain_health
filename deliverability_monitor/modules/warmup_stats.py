@@ -58,7 +58,11 @@ def fetch_warmup_stats(account_id: int) -> Optional[Dict]:
 _WARMUP_ACTIVE = {"true", "1", "active", "enabled"}
 
 def _is_warmup_enabled(raw: Dict) -> bool:
-    val = raw.get("warmup_enabled", raw.get("warmup_status", raw.get("status", "")))
+    # warmup_status ("active"/"paused") is more reliable than the warmup_enabled bool
+    status = str(raw.get("warmup_status", "")).lower()
+    if status in _WARMUP_ACTIVE:
+        return True
+    val = raw.get("warmup_enabled", raw.get("status", ""))
     if isinstance(val, bool):
         return val
     return str(val).lower() in _WARMUP_ACTIVE
