@@ -3,11 +3,18 @@ import { cached, invalidate } from './cache';
 
 async function authFetch(url) {
   const token = await getIdToken();
-  const res = await fetch(url, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  });
-  if (!res.ok) throw new Error(`Failed to load data — HTTP ${res.status}`);
-  return res.json();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 30_000);
+  try {
+    const res = await fetch(url, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      signal: controller.signal,
+    });
+    if (!res.ok) throw new Error(`Failed to load data — HTTP ${res.status}`);
+    return res.json();
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export function getDomainStats() {

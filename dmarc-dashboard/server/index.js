@@ -144,23 +144,33 @@ class InfluxError extends Error {
 }
 
 async function queryFlux(flux) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 30_000);
   const endpoint = `${INFLUX_URL.replace(/\/$/, '')}/api/v2/query?org=${encodeURIComponent(INFLUX_ORG)}`;
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      Authorization: `Token ${INFLUX_TOKEN}`,
-      'Content-Type': 'application/vnd.flux',
-      Accept: 'application/csv',
-    },
-    body: flux,
-  });
+  try {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        Authorization: `Token ${INFLUX_TOKEN}`,
+        'Content-Type': 'application/vnd.flux',
+        Accept: 'application/csv',
+      },
+      body: flux,
+      signal: controller.signal,
+    });
 
-  if (!response.ok) {
-    const body = await response.text();
-    throw new InfluxError(response.status, body);
+    if (!response.ok) {
+      const body = await response.text();
+      throw new InfluxError(response.status, body);
+    }
+
+    return parseCsv(await response.text());
+  } catch (err) {
+    if (err instanceof InfluxError) throw err;
+    throw new InfluxError(503, err.message);
+  } finally {
+    clearTimeout(timer);
   }
-
-  return parseCsv(await response.text());
 }
 
 const DOMAIN_STATS_TTL = 90 * 60 * 1000;
@@ -185,6 +195,7 @@ async function getDomainStats() {
     return result;
   }).catch((err) => {
     _domainStatsInflight = null;
+    if (_domainStatsCache) return _domainStatsCache;
     throw err;
   });
   return _domainStatsInflight;
@@ -224,7 +235,7 @@ from(bucket: "${INFLUX_BUCKET}")
 `);
   } catch (err) {
     // Bucket empty or no dmarc_aggregate data yet — return empty
-    if (err instanceof InfluxError && (err.status === 404 || err.status === 422)) {
+    if (err instanceof InfluxError && (err.status === 404 || err.status === 422 || err.status === 503)) {
       return [];
     }
     throw err;
@@ -354,7 +365,7 @@ from(bucket: "${INFLUX_DELIVERABILITY_BUCKET}")
   |> filter(fn: (r) => r._value == "0" or r._value == 0)
 `);
     } catch (err) {
-      if (err instanceof InfluxError && (err.status === 404 || err.status === 422)) {
+      if (err instanceof InfluxError && (err.status === 404 || err.status === 422 || err.status === 503)) {
         return res.json({ ok: true, gaps: {} });
       }
       throw err;
@@ -404,7 +415,7 @@ from(bucket: "${INFLUX_DELIVERABILITY_BUCKET}")
   |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
 `);
     } catch (err) {
-      if (err instanceof InfluxError && (err.status === 404 || err.status === 422)) {
+      if (err instanceof InfluxError && (err.status === 404 || err.status === 422 || err.status === 503)) {
         return res.json({ ok: true, domains: [] });
       }
       throw err;
@@ -456,7 +467,7 @@ from(bucket: "${INFLUX_DELIVERABILITY_BUCKET}")
   |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
 `);
     } catch (err) {
-      if (err instanceof InfluxError && (err.status === 404 || err.status === 422)) {
+      if (err instanceof InfluxError && (err.status === 404 || err.status === 422 || err.status === 503)) {
         return res.json({ ok: true, domains: [] });
       }
       throw err;
@@ -525,7 +536,7 @@ app.get('/api/metrics/domain-trend', authMiddleware, rateLimitMiddleware, async 
         _fetchRateWindow('-14d', '-7d'),
       ]);
     } catch (err) {
-      if (err instanceof InfluxError && (err.status === 404 || err.status === 422)) {
+      if (err instanceof InfluxError && (err.status === 404 || err.status === 422 || err.status === 503)) {
         return res.json({ ok: true, trends: [] });
       }
       throw err;
@@ -573,7 +584,7 @@ from(bucket: "${INFLUX_DELIVERABILITY_BUCKET}")
   |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
 `);
     } catch (err) {
-      if (err instanceof InfluxError && (err.status === 404 || err.status === 422)) {
+      if (err instanceof InfluxError && (err.status === 404 || err.status === 422 || err.status === 503)) {
         return res.json({ ok: true, domains: [] });
       }
       throw err;
@@ -625,7 +636,7 @@ from(bucket: "${INFLUX_BUCKET}")
   |> limit(n: 500)
 `);
     } catch (err) {
-      if (err instanceof InfluxError && (err.status === 404 || err.status === 422)) {
+      if (err instanceof InfluxError && (err.status === 404 || err.status === 422 || err.status === 503)) {
         return res.json({ ok: true, sources: [] });
       }
       throw err;
@@ -646,10 +657,8 @@ from(bucket: "${INFLUX_BUCKET}")
 
 app.get('/api/metrics/sender-health', authMiddleware, rateLimitMiddleware, async (_req, res) => {
   try {
-    let domainRows, mailboxRows, trendRows;
-    try {
-      [domainRows, mailboxRows, trendRows] = await Promise.all([
-        queryFlux(`
+    const [domainResult, mailboxResult, trendResult] = await Promise.allSettled([
+      queryFlux(`
 from(bucket: "${INFLUX_DELIVERABILITY_BUCKET}")
   |> range(start: -48h)
   |> filter(fn: (r) => r._measurement == "smartlead_health")
@@ -667,7 +676,7 @@ from(bucket: "${INFLUX_DELIVERABILITY_BUCKET}")
   |> group(columns: ["domain"])
   |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
 `),
-        queryFlux(`
+      queryFlux(`
 from(bucket: "${INFLUX_DELIVERABILITY_BUCKET}")
   |> range(start: -48h)
   |> filter(fn: (r) => r._measurement == "smartlead_health")
@@ -686,7 +695,7 @@ from(bucket: "${INFLUX_DELIVERABILITY_BUCKET}")
   |> group(columns: ["email", "domain"])
   |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
 `),
-        queryFlux(`
+      queryFlux(`
 from(bucket: "${INFLUX_DELIVERABILITY_BUCKET}")
   |> range(start: -30d)
   |> filter(fn: (r) => r._measurement == "smartlead_health")
@@ -696,13 +705,17 @@ from(bucket: "${INFLUX_DELIVERABILITY_BUCKET}")
   |> aggregateWindow(every: 1d, fn: last, createEmpty: false)
   |> map(fn: (r) => ({domain: r.domain, _time: r._time, _value: r._value}))
 `),
-      ]);
-    } catch (err) {
-      if (err instanceof InfluxError && (err.status === 404 || err.status === 422)) {
+    ]);
+    if (domainResult.status === 'rejected') {
+      const e = domainResult.reason;
+      if (e instanceof InfluxError && (e.status === 404 || e.status === 422 || e.status === 503)) {
         return res.json({ ok: true, domains: [] });
       }
-      throw err;
+      throw e;
     }
+    const domainRows = domainResult.value;
+    const mailboxRows = mailboxResult.status === 'fulfilled' ? mailboxResult.value : [];
+    const trendRows = trendResult.status === 'fulfilled' ? trendResult.value : [];
 
     // Build reply_rate trend map: { domain -> [v1, v2, ...] } (chronological, last 30d)
     const trendMap = {};

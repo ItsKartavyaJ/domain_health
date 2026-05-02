@@ -27,7 +27,7 @@ function _redactKey(str) {
   return key ? str.replaceAll(key, '***') : str;
 }
 
-async function _slFetch(path, opts = {}) {
+async function _slFetch(path, opts = {}, _attempt = 0) {
   const sep = path.includes('?') ? '&' : '?';
   const url = `${SL_BASE}${path}${sep}api_key=${SL_KEY()}`;
   const controller = new AbortController();
@@ -41,11 +41,19 @@ async function _slFetch(path, opts = {}) {
     });
     if (!res.ok) {
       const body = await res.text();
-      throw new Error(`Smartlead ${res.status}: ${body.slice(0, 200)}`);
+      const err = new Error(`Smartlead ${res.status}: ${body.slice(0, 200)}`);
+      err.status = res.status;
+      throw err;
     }
     return res.json();
   } catch (err) {
     err.message = _redactKey(err.message);
+    const retryable = err.name === 'AbortError' || err.status === 429 || (err.status >= 500 && err.status <= 599);
+    if (_attempt < 2 && retryable) {
+      clearTimeout(timer);
+      await new Promise((r) => setTimeout(r, err.status === 429 ? 2000 : 1000));
+      return _slFetch(path, opts, _attempt + 1);
+    }
     throw err;
   } finally {
     clearTimeout(timer);
@@ -119,10 +127,10 @@ router.get('/reply-categories', async (req, res) => {
     const data = await srvCached(`reply-categories:${start_date}:${end_date}`, async () => {
       const chunks = _chunkDates(start_date, end_date);
       const byName = new Map();
-      for (const { start, end } of chunks) {
-        const raw = await _slFetch(
-          `/analytics/lead/category-wise-response?start_date=${start}&end_date=${end}`
-        );
+      const chunkResults = await Promise.all(chunks.map(({ start, end }) =>
+        _slFetch(`/analytics/lead/category-wise-response?start_date=${start}&end_date=${end}`)
+      ));
+      for (const raw of chunkResults) {
         const groups = raw?.data?.lead_responses_by_category?.leadResponseGrouping || [];
         for (const g of groups) {
           const key = (g.name || '').toLowerCase();
@@ -154,10 +162,10 @@ router.get('/daily-stats', async (req, res) => {
     const data = await srvCached(`daily-stats:${start_date}:${end_date}`, async () => {
       const chunks = _chunkDates(start_date, end_date);
       const byDate = new Map();
-      for (const { start, end } of chunks) {
-        const raw = await _slFetch(
-          `/analytics/day-wise-overall-stats?start_date=${start}&end_date=${end}`
-        );
+      const chunkResults = await Promise.all(chunks.map(({ start, end }) =>
+        _slFetch(`/analytics/day-wise-overall-stats?start_date=${start}&end_date=${end}`)
+      ));
+      for (const raw of chunkResults) {
         for (const d of raw?.data?.day_wise_stats || []) {
           const key = d.date;
           if (!byDate.has(key)) byDate.set(key, { date: d.date, day_name: d.day_name, sent: 0, opened: 0, replied: 0, bounced: 0, unsubscribed: 0 });
@@ -186,10 +194,10 @@ router.get('/daily-positive-replies', async (req, res) => {
     const data = await srvCached(`daily-positive-replies:${start_date}:${end_date}`, async () => {
       const chunks = _chunkDates(start_date, end_date);
       const byDate = new Map();
-      for (const { start, end } of chunks) {
-        const raw = await _slFetch(
-          `/analytics/day-wise-positive-reply-stats?start_date=${start}&end_date=${end}`
-        );
+      const chunkResults = await Promise.all(chunks.map(({ start, end }) =>
+        _slFetch(`/analytics/day-wise-positive-reply-stats?start_date=${start}&end_date=${end}`)
+      ));
+      for (const raw of chunkResults) {
         for (const d of raw?.data?.day_wise_stats || []) {
           const key = d.date;
           if (!byDate.has(key)) byDate.set(key, { date: d.date, day_name: d.day_name, positive_replies: 0 });
@@ -215,11 +223,13 @@ router.get('/response-stats', async (req, res) => {
       const byId = new Map();   // campaign_id → merged response stats
       const sentById = new Map(); // campaign_id → total sent
 
-      for (const { start, end } of chunks) {
-        const [respRaw, campRaw] = await Promise.all([
+      const chunkResults = await Promise.all(chunks.map(({ start, end }) =>
+        Promise.all([
           _slFetch(`/analytics/campaign/response-stats?start_date=${start}&end_date=${end}&full_data=true`),
           _slFetch(`/analytics/campaign/overall-stats?start_date=${start}&end_date=${end}&full_data=true&limit=200&offset=0`),
-        ]);
+        ])
+      ));
+      for (const [respRaw, campRaw] of chunkResults) {
         for (const c of campRaw?.data?.campaign_wise_performance || []) {
           const id = String(c.id);
           sentById.set(id, (sentById.get(id) || 0) + num(c.sent));
@@ -265,12 +275,14 @@ router.get('/mailbox-health', async (req, res) => {
     const data = await srvCached(`mailbox-health:${start_date}:${end_date}`, async () => {
       const chunks = _chunkDates(start_date, end_date);
       const byEmail = new Map();
-      for (const { start, end } of chunks) {
-        const page = await _fetchAllPages(
+      const chunkPages = await Promise.all(chunks.map(({ start, end }) =>
+        _fetchAllPages(
           `mailbox-health:${start}:${end}`,
           (offset, limit) => `/analytics/mailbox/name-wise-health-metrics?start_date=${start}&end_date=${end}&full_data=true&limit=${limit}&offset=${offset}`,
           (raw) => raw?.data?.email_health_metrics || [],
-        );
+        )
+      ));
+      for (const page of chunkPages) {
         for (const m of page) {
           const key = (m.from_email || '').toLowerCase();
           if (!byEmail.has(key)) byEmail.set(key, { from_email: m.from_email, sent: 0, opened: 0, replied: 0, positive_replied: 0, bounced: 0 });
@@ -304,12 +316,14 @@ router.get('/domain-health', async (req, res) => {
     const data = await srvCached(`domain-health:${start_date}:${end_date}`, async () => {
       const chunks = _chunkDates(start_date, end_date);
       const byDomain = new Map();
-      for (const { start, end } of chunks) {
-        const page = await _fetchAllPages(
+      const chunkPages = await Promise.all(chunks.map(({ start, end }) =>
+        _fetchAllPages(
           `domain-health:${start}:${end}`,
           (offset, limit) => `/analytics/mailbox/domain-wise-health-metrics?start_date=${start}&end_date=${end}&full_data=true&limit=${limit}&offset=${offset}`,
           (raw) => raw?.data?.domain_health_metrics || [],
-        );
+        )
+      ));
+      for (const page of chunkPages) {
         for (const d of page) {
           const key = (d.domain || '').toLowerCase();
           if (!byDomain.has(key)) byDomain.set(key, { domain: d.domain, sent: 0, opened: 0, replied: 0, bounced: 0 });
@@ -407,12 +421,14 @@ router.get('/campaign-stats', async (req, res) => {
         statusMap[String(camp.id)] = camp.status || '';
       }
 
-      for (const { start, end } of chunks) {
-        const page = await _fetchAllPages(
+      const chunkPages = await Promise.all(chunks.map(({ start, end }) =>
+        _fetchAllPages(
           `campaign-stats-chunk:${start}:${end}`,
           (offset, limit) => `/analytics/campaign/overall-stats?start_date=${start}&end_date=${end}&full_data=true&limit=${limit}&offset=${offset}`,
           (raw) => raw?.data?.campaign_wise_performance || [],
-        );
+        )
+      ));
+      for (const page of chunkPages) {
         for (const c of page) {
           const id = String(c.id);
           if (!byId.has(id)) byId.set(id, { id: c.id, campaign_name: c.campaign_name, sent: 0, opened: 0, replied: 0, bounced: 0, positive_replied: 0 });

@@ -3,15 +3,22 @@ import { cached } from './cache';
 
 async function authFetch(url, opts = {}) {
   const token = await getIdToken();
-  const res = await fetch(url, {
-    ...opts,
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(opts.body ? { 'Content-Type': 'application/json' } : {}),
-    },
-  });
-  if (!res.ok) throw new Error(`API error ${res.status}`);
-  return res.json();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 30_000);
+  try {
+    const res = await fetch(url, {
+      ...opts,
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(opts.body ? { 'Content-Type': 'application/json' } : {}),
+      },
+      signal: controller.signal,
+    });
+    if (!res.ok) throw new Error(`API error ${res.status}`);
+    return res.json();
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function qs(params) {
