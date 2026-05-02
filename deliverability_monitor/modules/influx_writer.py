@@ -42,6 +42,23 @@ class InfluxWriter:
             log.error("InfluxDB write failed: %s", e)
             raise
 
+    def delete_email_series(self, email: str) -> None:
+        """Delete all InfluxDB data for a removed mailbox across relevant measurements."""
+        delete_api = self._client.delete_api()
+        stop = datetime.now(timezone.utc).isoformat()
+        for measurement in ("warmup_stats", "smartlead_health", "mailbox_status"):
+            try:
+                delete_api.delete(
+                    start="1970-01-01T00:00:00Z",
+                    stop=stop,
+                    predicate=f'_measurement="{measurement}" AND email="{email}"',
+                    bucket=cfg.bucket,
+                    org=cfg.org,
+                )
+            except Exception as e:
+                log.warning("Failed to purge %s series for %s: %s", measurement, email, e)
+        log.info("Purged InfluxDB series for deleted mailbox: %s", email)
+
     def close(self):
         self._client.close()
 

@@ -26,6 +26,7 @@ import dns.resolver
 
 from config.settings import smartlead as sl_cfg, SENDING_DOMAINS, SENDING_IPS
 from modules.smartlead_client import sl_get
+from modules.influx_writer import writer as _influx_writer
 
 log = logging.getLogger(__name__)
 
@@ -176,6 +177,19 @@ def refresh(force: bool = False) -> None:
         _cache["mailboxes"] = []
         _cache["last_refresh"] = now
         return
+
+    # Purge InfluxDB series for mailboxes removed since last refresh
+    if _cache["mailboxes"]:
+        prev_emails = {mb.get("from_email") or mb.get("email", "") for mb in _cache["mailboxes"]} - {""}
+        new_emails  = {mb.get("from_email") or mb.get("email", "") for mb in mailboxes} - {""}
+        removed = prev_emails - new_emails
+        if removed:
+            log.info("Detected %d removed mailbox(es), purging from InfluxDB", len(removed))
+            for email in removed:
+                try:
+                    _influx_writer.delete_email_series(email)
+                except Exception as e:
+                    log.warning("Failed to purge InfluxDB series for %s: %s", email, e)
 
     _cache["mailboxes"] = mailboxes
     log.info("Discovered %d mailboxes from Smartlead", len(mailboxes))

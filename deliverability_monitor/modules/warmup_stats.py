@@ -31,7 +31,7 @@ from config.settings import smartlead as sl_cfg, alerts as alert_cfg
 from modules.domain_discovery import get_mailboxes, get_warmup_status_map
 from modules.influx_writer import writer
 from modules.alerter import send_alert
-from modules.utils import safe_float as _safe_float, safe_int as _safe_int
+from modules.utils import safe_float as _safe_float, safe_int as _safe_int, health_score as _health_score
 
 log = logging.getLogger(__name__)
 
@@ -59,27 +59,32 @@ def parse_warmup(account_id: int, email: str, raw: Dict, warmup_active: bool = T
     """
     Normalize Smartlead /warmup-stats response into a flat dict.
 
-    Actual API fields (from Smartlead docs):
-      total_sent, spam_count, reputation_score, daily_stats[]
-    inbox_count is derived: total_sent - spam_count (API doesn't provide it separately).
+    Actual API fields:
+      sent_count, spam_count, inbox_count  (root-level totals)
+      stats_by_date[]: sent_count, save_from_spam_count  (daily breakdown)
     warmup_active comes from warmup_details.status on the /email-accounts/ response.
     """
-    total_sent = _safe_int(raw.get("total_sent", 0))
-    spam_count = _safe_int(raw.get("spam_count", 0))
+    total_sent  = _safe_int(raw.get("sent_count",  raw.get("total_sent",  0)))
+    spam_count  = _safe_int(raw.get("spam_count",  0))
+    inbox_count = _safe_int(raw.get("inbox_count", 0))
 
-    # API sometimes returns 0 at root level; actual data lives in daily_stats[]
-    daily = raw.get("daily_stats") or []
+    # Fallback: root totals are 0 but daily breakdown may have data
+    daily = raw.get("stats_by_date") or raw.get("daily_stats") or []
     if total_sent == 0 and daily:
-        total_sent = sum(_safe_int(d.get("sent", 0)) for d in daily)
-        spam_count = sum(_safe_int(d.get("spam", 0)) for d in daily)
+        total_sent  = sum(_safe_int(d.get("sent_count", d.get("sent", 0))) for d in daily)
+        # save_from_spam_count = warmup emails rescued from spam = inbox proxy
+        inbox_count = sum(_safe_int(d.get("save_from_spam_count", 0)) for d in daily)
+        spam_count  = max(0, total_sent - inbox_count)
 
-    inbox_count = max(0, total_sent - spam_count)
+    # If inbox_count not provided at root, derive from sent - spam
+    if inbox_count == 0 and total_sent > spam_count:
+        inbox_count = total_sent - spam_count
 
     spam_pct  = round(spam_count  / total_sent * 100, 2) if total_sent > 0 else 0.0
     inbox_pct = round(inbox_count / total_sent * 100, 2) if total_sent > 0 else 0.0
 
-    # reputation_score is provided directly (0–100 number)
-    health_score = _safe_float(raw.get("reputation_score", 0))
+    # API does not expose a reputation_score; derive from inbox/spam rates
+    health_score = _health_score(inbox_pct, spam_pct)
 
     domain = email.split("@")[1] if "@" in email else "unknown"
 

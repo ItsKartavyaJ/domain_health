@@ -7,6 +7,8 @@ from typing import Any
 
 def safe_float(val: Any, default: float = 0.0) -> float:
     try:
+        if isinstance(val, str):
+            val = val.strip().rstrip('%')
         return float(val if val is not None else default)
     except (TypeError, ValueError):
         return default
