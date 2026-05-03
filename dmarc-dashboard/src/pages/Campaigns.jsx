@@ -6,6 +6,59 @@ import SectionLoader from '../components/SectionLoader';
 import { getCampaignStats, getDailyStats } from '../api/smartlead';
 import { TODAY, THIRTY_DAYS_AGO } from '../utils/dates';
 
+const MONTH_INDEX = {
+  jan: 0, january: 0,
+  feb: 1, february: 1,
+  mar: 2, march: 2,
+  apr: 3, april: 3,
+  may: 4,
+  jun: 5, june: 5,
+  jul: 6, july: 6,
+  aug: 7, august: 7,
+  sep: 8, sept: 8, september: 8,
+  oct: 9, october: 9,
+  nov: 10, november: 10,
+  dec: 11, december: 11,
+};
+
+function parseDailyDateMs(value, startDate, endDate) {
+  const raw = String(value || '').trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    const direct = Date.parse(`${raw}T00:00:00Z`);
+    if (Number.isFinite(direct)) return direct;
+  }
+
+  const match = raw.match(/^(\d{1,2})\s+([A-Za-z]{3,})$/);
+  if (!match) return 0;
+
+  const day = Number(match[1]);
+  const month = MONTH_INDEX[match[2].toLowerCase()];
+  if (!Number.isInteger(day) || month == null) return 0;
+
+  const start = new Date(`${startDate}T00:00:00Z`);
+  const end = new Date(`${endDate}T23:59:59Z`);
+  const years = new Set([start.getUTCFullYear(), end.getUTCFullYear()]);
+
+  for (const year of years) {
+    const candidate = Date.UTC(year, month, day);
+    if (candidate >= start.getTime() && candidate <= end.getTime()) {
+      return candidate;
+    }
+  }
+  return Date.UTC(end.getUTCFullYear(), month, day);
+}
+
+function formatDailyDate(value) {
+  const raw = String(value || '').trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    const direct = Date.parse(`${raw}T00:00:00Z`);
+    if (Number.isFinite(direct)) {
+      return new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric' }).format(new Date(direct));
+    }
+  }
+  return raw;
+}
+
 export default function Campaigns() {
   const [startDate, setStartDate] = useState(THIRTY_DAYS_AGO);
   const [endDate, setEndDate]     = useState(TODAY);
@@ -73,6 +126,16 @@ export default function Campaigns() {
     { name: 'Positive', value: totalPositive, fill: '#22C55E' },
   ];
 
+  const dailyChartData = daily
+    .map((d) => ({
+      date: formatDailyDate(d.date),
+      dateMs: parseDailyDateMs(d.date, startDate, endDate),
+      sent: d.sent || 0,
+      opened: d.opened || 0,
+      replied: d.replied || 0,
+    }))
+    .sort((a, b) => a.dateMs - b.dateMs);
+
   return (
     <main style={{ maxWidth: 1280, margin: '0 auto', padding: '28px 24px 48px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
@@ -129,14 +192,9 @@ export default function Campaigns() {
             <div style={{ height: 290, display: 'grid', placeItems: 'center', color: 'var(--err-text)', fontSize: 13 }}>{dailyError}</div>
           ) : daily.length > 0 ? (
             <ResponsiveContainer width="100%" height={290}>
-              <AreaChart data={daily.map((d) => ({
-                date: d.date || '',
-                sent: d.sent || 0,
-                opened: d.opened || 0,
-                replied: d.replied || 0,
-              }))} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+              <AreaChart data={dailyChartData} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'var(--muted)' }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
+                <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'var(--muted)' }} tickLine={false} axisLine={false} interval="preserveStartEnd" minTickGap={18} />
                 <YAxis tick={{ fontSize: 10, fill: 'var(--muted)' }} tickLine={false} axisLine={false} width={40} />
                 <Tooltip contentStyle={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12, padding: '8px 12px' }} labelStyle={{ color: 'var(--text)', fontWeight: 600 }} itemStyle={{ color: 'var(--muted)' }} cursor={{ stroke: 'var(--border)' }} />
                 <Area type="monotone" dataKey="sent" stroke="#3B82F6" fill="var(--info-bg)" strokeWidth={2} dot={false} activeDot={{ r: 3 }} name="Sent" />
