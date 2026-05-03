@@ -362,7 +362,7 @@ from(bucket: "${INFLUX_DELIVERABILITY_BUCKET}")
   |> filter(fn: (r) => r._field == "authorized")
   |> group(columns: ["domain", "ip"])
   |> last()
-  |> filter(fn: (r) => r._value == "0" or r._value == 0)
+  |> filter(fn: (r) => string(v: r._value) == "0")
 `);
     } catch (err) {
       if (err instanceof InfluxError && (err.status === 404 || err.status === 422 || err.status === 503)) {
