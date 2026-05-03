@@ -657,7 +657,7 @@ from(bucket: "${INFLUX_BUCKET}")
 
 app.get('/api/metrics/sender-health', authMiddleware, rateLimitMiddleware, async (_req, res) => {
   try {
-    const [domainResult, mailboxResult, trendResult] = await Promise.allSettled([
+    const [domainResult, mailboxResult, warmupResult, trendResult] = await Promise.allSettled([
       queryFlux(`
 from(bucket: "${INFLUX_DELIVERABILITY_BUCKET}")
   |> range(start: -48h)
@@ -697,6 +697,24 @@ from(bucket: "${INFLUX_DELIVERABILITY_BUCKET}")
 `),
       queryFlux(`
 from(bucket: "${INFLUX_DELIVERABILITY_BUCKET}")
+  |> range(start: -48h)
+  |> filter(fn: (r) => r._measurement == "warmup_stats")
+  |> filter(fn: (r) => r._field == "health_score" or r._field == "spam_pct" or r._field == "inbox_pct" or r._field == "warmup_enabled")
+  |> map(fn: (r) => ({
+      _time: r._time,
+      _measurement: r._measurement,
+      email: r.email,
+      domain: r.domain,
+      _field: r._field,
+      _value: string(v: r._value),
+    }))
+  |> group(columns: ["_measurement", "email", "domain", "_field"])
+  |> last()
+  |> group(columns: ["email", "domain"])
+  |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
+`),
+      queryFlux(`
+from(bucket: "${INFLUX_DELIVERABILITY_BUCKET}")
   |> range(start: -30d)
   |> filter(fn: (r) => r._measurement == "smartlead_health")
   |> filter(fn: (r) => r.grain == "domain")
@@ -715,6 +733,7 @@ from(bucket: "${INFLUX_DELIVERABILITY_BUCKET}")
     }
     const domainRows = domainResult.value;
     const mailboxRows = mailboxResult.status === 'fulfilled' ? mailboxResult.value : [];
+    const warmupRows = warmupResult.status === 'fulfilled' ? warmupResult.value : [];
     const trendRows = trendResult.status === 'fulfilled' ? trendResult.value : [];
 
     // Build reply_rate trend map: { domain -> [v1, v2, ...] } (chronological, last 30d)
@@ -725,19 +744,32 @@ from(bucket: "${INFLUX_DELIVERABILITY_BUCKET}")
       trendMap[r.domain].push(Math.round(toNumber(r._value) * 10) / 10);
     }
 
+    // Build warmup map keyed by email, then merge it into sender-health mailbox rows.
+    const warmupMap = {};
+    for (const r of warmupRows) {
+      if (!r.email) continue;
+      warmupMap[r.email] = {
+        inbox_pct: Math.round(toNumber(r.inbox_pct) * 10) / 10,
+        spam_pct: Math.round(toNumber(r.spam_pct) * 10) / 10,
+        health_score: Math.round(toNumber(r.health_score)),
+        warmup_enabled: r.warmup_enabled === '1' || Number(r.warmup_enabled) === 1,
+      };
+    }
+
     // Build mailbox map keyed by domain
     const mailboxMap = {};
     for (const r of mailboxRows) {
       if (!r.domain || !r.email) continue;
+      const warmup = warmupMap[r.email] || {};
       if (!mailboxMap[r.domain]) mailboxMap[r.domain] = [];
       mailboxMap[r.domain].push({
         email: r.email,
         sent_count: Math.round(toNumber(r.sent_count)),
-        inbox_pct: Math.round(toNumber(r.inbox_pct) * 10) / 10,
-        spam_pct: Math.round(toNumber(r.spam_pct) * 10) / 10,
+        inbox_pct: Number.isFinite(warmup.inbox_pct) ? warmup.inbox_pct : Math.round(toNumber(r.inbox_pct) * 10) / 10,
+        spam_pct: Number.isFinite(warmup.spam_pct) ? warmup.spam_pct : Math.round(toNumber(r.spam_pct) * 10) / 10,
         bounce_rate: Math.round(toNumber(r.bounce_rate) * 10) / 10,
-        health_score: Math.round(toNumber(r.health_score)),
-        warmup_status: r.warmup_status || 'unknown',
+        health_score: Number.isFinite(warmup.health_score) ? warmup.health_score : Math.round(toNumber(r.health_score)),
+        warmup_status: warmup.warmup_enabled ? 'active' : (r.warmup_enabled !== undefined ? 'paused' : (r.warmup_status || 'unknown')),
       });
     }
 
