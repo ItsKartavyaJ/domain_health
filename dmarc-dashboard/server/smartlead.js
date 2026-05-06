@@ -535,7 +535,16 @@ router.post('/inbox-replies', async (req, res) => {
 
 export default router;
 
-// ── Shared fetch helpers (used by sender-health route in index.js) ───────────
+// ── Shared fetch helpers (used by other server routes in index.js) ───────────
+
+export async function fetchCurrentEmailSet() {
+  const all = await _fetchAllPages(
+    'email-accounts',
+    (offset, limit) => `/email-accounts?limit=${limit}&offset=${offset}`,
+    (raw) => (Array.isArray(raw) ? raw : raw?.data || []),
+  );
+  return new Set(all.map((a) => (a.from_email || '').toLowerCase()).filter(Boolean));
+}
 
 export async function fetchDomainHealthForRange(startDate, endDate) {
   const chunks = _chunkDates(startDate, endDate);

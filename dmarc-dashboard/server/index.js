@@ -4,7 +4,7 @@ import { initializeApp, getApps } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import smartleadRouter, { fetchDomainHealthForRange, fetchMailboxHealthForRange } from './smartlead.js';
+import smartleadRouter, { fetchDomainHealthForRange, fetchMailboxHealthForRange, fetchCurrentEmailSet } from './smartlead.js';
 
 dotenv.config();
 
@@ -659,7 +659,7 @@ app.get('/api/metrics/warmup-stats', authMiddleware, rateLimitMiddleware, async 
   const ALLOWED_RANGES = ['-7d', '-14d', '-30d', '-90d'];
   const range = ALLOWED_RANGES.includes(req.query.range) ? req.query.range : '-30d';
   try {
-    const [snapshotResult, trendResult] = await Promise.allSettled([
+    const [snapshotResult, trendResult, emailSetResult] = await Promise.allSettled([
       queryFlux(`
 from(bucket: "${INFLUX_DELIVERABILITY_BUCKET}")
   |> range(start: ${range})
@@ -687,6 +687,7 @@ from(bucket: "${INFLUX_DELIVERABILITY_BUCKET}")
   |> aggregateWindow(every: 1d, fn: mean, createEmpty: false)
   |> map(fn: (r) => ({domain: r.domain, _time: r._time, _field: r._field, _value: r._value}))
 `),
+      fetchCurrentEmailSet(),
     ]);
 
     if (snapshotResult.status === 'rejected') {
@@ -698,6 +699,8 @@ from(bucket: "${INFLUX_DELIVERABILITY_BUCKET}")
     }
 
     const snapshotRows = snapshotResult.value;
+    // Filter to only mailboxes that currently exist in Smartlead
+    const activeEmails = emailSetResult.status === 'fulfilled' ? emailSetResult.value : null;
     const trendRows = trendResult.status === 'fulfilled' ? trendResult.value : [];
 
     // Build daily trend per domain
@@ -714,10 +717,11 @@ from(bucket: "${INFLUX_DELIVERABILITY_BUCKET}")
       if (r._field === 'spam_pct') trendMap[r.domain].spam.push({ date, value: val });
     }
 
-    // Build per-mailbox snapshot grouped by domain
+    // Build per-mailbox snapshot grouped by domain (skip stale/removed mailboxes)
     const domainMap = {};
     for (const r of snapshotRows) {
       if (!r.domain || !r.email) continue;
+      if (activeEmails && !activeEmails.has(r.email.toLowerCase())) continue;
       if (!domainMap[r.domain]) domainMap[r.domain] = { domain: r.domain, mailboxes: [] };
       domainMap[r.domain].mailboxes.push({
         email: r.email,
