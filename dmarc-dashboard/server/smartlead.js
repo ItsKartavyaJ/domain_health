@@ -47,14 +47,15 @@ async function _slFetch(path, opts = {}, _attempt = 0) {
     }
     return res.json();
   } catch (err) {
-    err.message = _redactKey(err.message);
-    const retryable = err.name === 'AbortError' || err.status === 429 || (err.status >= 500 && err.status <= 599);
+    const redacted = _redactKey(err.message || '');
+    const wrappedErr = redacted !== err.message ? Object.assign(new Error(redacted), { status: err.status, name: err.name }) : err;
+    const retryable = wrappedErr.name === 'AbortError' || wrappedErr.status === 429 || (wrappedErr.status >= 500 && wrappedErr.status <= 599);
     if (_attempt < 2 && retryable) {
       clearTimeout(timer);
-      await new Promise((r) => setTimeout(r, err.status === 429 ? 2000 : 1000));
+      await new Promise((r) => setTimeout(r, wrappedErr.status === 429 ? 2000 : 1000));
       return _slFetch(path, opts, _attempt + 1);
     }
-    throw err;
+    throw wrappedErr;
   } finally {
     clearTimeout(timer);
   }
@@ -224,12 +225,16 @@ router.get('/response-stats', async (req, res) => {
       const sentById = new Map(); // campaign_id → total sent
 
       const chunkResults = await Promise.all(chunks.map(({ start, end }) =>
-        Promise.all([
+        Promise.allSettled([
           _slFetch(`/analytics/campaign/response-stats?start_date=${start}&end_date=${end}&full_data=true`),
           _slFetch(`/analytics/campaign/overall-stats?start_date=${start}&end_date=${end}&full_data=true&limit=200&offset=0`),
         ])
       ));
-      for (const [respRaw, campRaw] of chunkResults) {
+      for (const [respResult, campResult] of chunkResults) {
+        const campRaw = campResult.status === 'fulfilled' ? campResult.value : null;
+        const respRaw = respResult.status === 'fulfilled' ? respResult.value : null;
+        if (campResult.status === 'rejected') console.warn('[response-stats] overall-stats chunk failed:', campResult.reason?.message);
+        if (respResult.status === 'rejected') console.warn('[response-stats] response-stats chunk failed:', respResult.reason?.message);
         for (const c of campRaw?.data?.campaign_wise_performance || []) {
           const id = String(c.id);
           sentById.set(id, (sentById.get(id) || 0) + num(c.sent));

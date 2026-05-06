@@ -705,7 +705,10 @@ from(bucket: "${INFLUX_DELIVERABILITY_BUCKET}")
     for (const r of trendRows) {
       if (!r.domain) continue;
       if (!trendMap[r.domain]) trendMap[r.domain] = { health: [], spam: [] };
-      const date = new Date(r._time).toISOString().slice(0, 10);
+      const raw = r._time;
+      const d = raw instanceof Date ? raw : new Date(String(raw));
+      if (isNaN(d.getTime())) continue;
+      const date = d.toISOString().slice(0, 10);
       const val = Math.round(toNumber(r._value) * 10) / 10;
       if (r._field === 'health_score') trendMap[r.domain].health.push({ date, value: val });
       if (r._field === 'spam_pct') trendMap[r.domain].spam.push({ date, value: val });
