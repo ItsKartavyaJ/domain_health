@@ -1,6 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Badge from '../components/Badge';
+import DateFilter from '../components/DateFilter';
 import { getSenderHealth } from '../api/influx';
+import { TODAY, THIRTY_DAYS_AGO } from '../utils/dates';
 
 function Sparkline({ values, width = 80, height = 28 }) {
   if (!values || values.length < 2) return <span style={{ fontSize: 11, color: 'var(--muted)' }}>—</span>;
@@ -138,17 +140,30 @@ function DomainRow({ d, last }) {
 const SORT_KEYS = ['sent_count', 'reply_rate', 'bounce_rate', 'positive_reply_rate', 'open_rate', 'spam_pct'];
 
 export default function SenderHealth() {
+  const [startDate, setStartDate] = useState(THIRTY_DAYS_AGO);
+  const [endDate, setEndDate] = useState(TODAY);
   const [domains, setDomains] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState({ key: 'reply_rate', dir: 'desc' });
+  const fetchId = useRef(0);
 
-  useEffect(() => {
-    getSenderHealth()
-      .then((d) => setDomains(Array.isArray(d) ? d : []))
-      .catch(() => setDomains([]))
-      .finally(() => setLoading(false));
-  }, []);
+  function fetchData(s, e) {
+    const id = ++fetchId.current;
+    setLoading(true);
+    getSenderHealth(s, e)
+      .then((d) => { if (fetchId.current === id) setDomains(Array.isArray(d) ? d : []); })
+      .catch(() => { if (fetchId.current === id) setDomains([]); })
+      .finally(() => { if (fetchId.current === id) setLoading(false); });
+  }
+
+  useEffect(() => { fetchData(THIRTY_DAYS_AGO, TODAY); }, []);
+
+  function onDateChange(s, e) {
+    setStartDate(s);
+    setEndDate(e);
+    fetchData(s, e);
+  }
 
   function toggleSort(key) {
     setSort((prev) => ({ key, dir: prev.key === key && prev.dir === 'desc' ? 'asc' : 'desc' }));
@@ -190,15 +205,18 @@ export default function SenderHealth() {
         <div>
           <h1 style={{ fontSize: 20, fontWeight: 700, letterSpacing: '-0.02em', marginBottom: 4 }}>Sender Health</h1>
           <p style={{ fontSize: 13, color: 'var(--muted)' }}>
-            {loading ? 'Loading…' : `${domains.length} domain${domains.length !== 1 ? 's' : ''} · ${totalSent.toLocaleString()} emails sent (last 48h)`}
+            {loading ? 'Loading…' : `${domains.length} domain${domains.length !== 1 ? 's' : ''} · ${totalSent.toLocaleString()} emails sent`}
           </p>
         </div>
-        <input
-          placeholder="Search domains..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          style={{ fontSize: 13, padding: '7px 12px', width: 220, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)' }}
-        />
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <DateFilter startDate={startDate} endDate={endDate} onChange={onDateChange} />
+          <input
+            placeholder="Search domains..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            style={{ fontSize: 13, padding: '7px 12px', width: 200, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)' }}
+          />
+        </div>
       </div>
 
       {!loading && domains.length > 0 && (

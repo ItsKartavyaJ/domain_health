@@ -529,3 +529,65 @@ router.post('/inbox-replies', async (req, res) => {
 });
 
 export default router;
+
+// ── Shared fetch helpers (used by sender-health route in index.js) ───────────
+
+export async function fetchDomainHealthForRange(startDate, endDate) {
+  const chunks = _chunkDates(startDate, endDate);
+  const byDomain = new Map();
+  const chunkPages = await Promise.all(chunks.map(({ start, end }) =>
+    _fetchAllPages(
+      `domain-health:${start}:${end}`,
+      (offset, limit) => `/analytics/mailbox/domain-wise-health-metrics?start_date=${start}&end_date=${end}&full_data=true&limit=${limit}&offset=${offset}`,
+      (raw) => raw?.data?.domain_health_metrics || [],
+    )
+  ));
+  for (const page of chunkPages) {
+    for (const d of page) {
+      const key = (d.domain || '').toLowerCase();
+      if (!byDomain.has(key)) byDomain.set(key, { domain: d.domain, sent: 0, opened: 0, replied: 0, positive_replied: 0, bounced: 0 });
+      const acc = byDomain.get(key);
+      acc.sent += num(d.sent); acc.opened += num(d.opened);
+      acc.replied += num(d.replied); acc.positive_replied += num(d.positive_replied);
+      acc.bounced += num(d.bounced);
+    }
+  }
+  return [...byDomain.values()].map((d) => ({
+    domain: d.domain,
+    sent_count: d.sent,
+    reply_rate: d.sent > 0 ? Math.round((d.replied / d.sent) * 10000) / 100 : 0,
+    bounce_rate: d.sent > 0 ? Math.round((d.bounced / d.sent) * 10000) / 100 : 0,
+    open_rate: d.sent > 0 ? Math.round((d.opened / d.sent) * 10000) / 100 : 0,
+    positive_reply_rate: d.sent > 0 ? Math.round((d.positive_replied / d.sent) * 10000) / 100 : 0,
+  }));
+}
+
+export async function fetchMailboxHealthForRange(startDate, endDate) {
+  const chunks = _chunkDates(startDate, endDate);
+  const byEmail = new Map();
+  const chunkPages = await Promise.all(chunks.map(({ start, end }) =>
+    _fetchAllPages(
+      `mailbox-health:${start}:${end}`,
+      (offset, limit) => `/analytics/mailbox/name-wise-health-metrics?start_date=${start}&end_date=${end}&full_data=true&limit=${limit}&offset=${offset}`,
+      (raw) => raw?.data?.email_health_metrics || [],
+    )
+  ));
+  for (const page of chunkPages) {
+    for (const m of page) {
+      const key = (m.from_email || '').toLowerCase();
+      if (!byEmail.has(key)) byEmail.set(key, { from_email: m.from_email, sent: 0, bounced: 0, inbox_pct: 0, spam_pct: 0, _count: 0 });
+      const acc = byEmail.get(key);
+      acc.sent += num(m.sent); acc.bounced += num(m.bounced);
+      acc.inbox_pct += num(m.inbox_percentage || m.inbox_pct || 0);
+      acc.spam_pct += num(m.spam_percentage || m.spam_pct || 0);
+      acc._count += 1;
+    }
+  }
+  return [...byEmail.values()].map((m) => ({
+    from_email: m.from_email,
+    sent_count: m.sent,
+    bounce_rate: m.sent > 0 ? Math.round((m.bounced / m.sent) * 10000) / 100 : 0,
+    inbox_pct: m._count > 0 ? Math.round((m.inbox_pct / m._count) * 10) / 10 : 0,
+    spam_pct: m._count > 0 ? Math.round((m.spam_pct / m._count) * 10) / 10 : 0,
+  }));
+}

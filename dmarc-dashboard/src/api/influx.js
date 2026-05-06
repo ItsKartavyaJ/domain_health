@@ -45,8 +45,15 @@ export function getWarmupSummary() {
   return cached('/api/metrics/warmup-summary', () => authFetch('/api/metrics/warmup-summary').then((j) => j.domains || []));
 }
 
-export function getSenderHealth() {
-  return cached('/api/metrics/sender-health', () => authFetch('/api/metrics/sender-health').then((j) => j.domains || []));
+export function getSenderHealth(startDate, endDate) {
+  const params = startDate && endDate ? `?start_date=${startDate}&end_date=${endDate}` : '';
+  const url = `/api/metrics/sender-health${params}`;
+  return cached(url, () => authFetch(url).then((j) => j.domains || []));
+}
+
+export function getWarmupStats(range = '-30d') {
+  const url = `/api/metrics/warmup-stats?range=${encodeURIComponent(range)}`;
+  return cached(url, () => authFetch(url).then((j) => j.domains || []));
 }
 
 export function getDmarcSources() {
