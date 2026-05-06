@@ -67,6 +67,8 @@ def parse_timestamp_ns(dt_str: str) -> int:
 
 
 def report_to_lines(report: dict) -> list:
+    if not isinstance(report, dict):
+        return []
     lines = []
     for record in report.get("records", []):
         identifiers = record.get("identifiers", {})
@@ -123,6 +125,8 @@ def write_to_influx(lines: list) -> None:
 
 def _report_key(report: dict) -> str:
     """Stable dedup key: report_id if present, content hash otherwise."""
+    if not isinstance(report, dict):
+        return "hash:" + hashlib.sha256(repr(report).encode()).hexdigest()
     rid = report.get("report_metadata", {}).get("report_id", "")
     if rid:
         return rid
@@ -163,15 +167,34 @@ def parse_aggregate_json(text: str) -> tuple[list, int]:
         try:
             obj, end = decoder.raw_decode(text, pos)
             if isinstance(obj, list):
-                reports.extend(obj)
+                def _flatten(items):
+                    for item in items:
+                        if isinstance(item, dict):
+                            reports.append(item)
+                        elif isinstance(item, list):
+                            _flatten(item)
+                _flatten(obj)
             elif isinstance(obj, dict):
                 reports.append(obj)
             last_good_pos = end
             last_safe_pos = end
             pos = end
         except json.JSONDecodeError:
+            # Skip lone structural characters (,  ]) that appear outside a value —
+            # these are array separators/closers left behind when the file is a
+            # fragment of a larger structure (e.g. opening [ was compacted away).
+            if text[pos] in (",", "]"):
+                pos += 1
+                last_safe_pos = pos
+                continue
             # Skip past corrupt data to the next top-level object boundary.
-            next_boundary = text.find("\n[", pos + 1)
+            # Search for any pattern that looks like the start of a JSON value.
+            candidates = []
+            for pat in ("\n[", "\n{"):
+                idx = text.find(pat, pos + 1)
+                if idx != -1:
+                    candidates.append(idx)
+            next_boundary = min(candidates) if candidates else -1
             if next_boundary == -1:
                 # Possibly a partial write at the tail — don't advance past it.
                 remaining = len(text) - pos
