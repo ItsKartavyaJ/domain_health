@@ -59,7 +59,12 @@ def send_alert(subject: str, body: Dict[str, Any]) -> bool:
 
     # Deduplicate: suppress re-firing the same (event, domain) within the window.
     event = body.get("event", "unknown")
-    domain = body.get("domain", body.get("domains", [""])[0] if isinstance(body.get("domains"), list) else "")
+    # body["domain"] is a plain string; body["domains"] may be a list of strings OR dicts
+    _domain_raw = body.get("domain") or ((body.get("domains") or [None])[0])
+    if isinstance(_domain_raw, dict):
+        domain = str(_domain_raw.get("domain", ""))
+    else:
+        domain = str(_domain_raw or "")
     dedup_key = f"{event}:{domain}"
     now = time.time()
     if dedup_key in _last_sent and (now - _last_sent[dedup_key]) < DEDUP_WINDOW_SECONDS:

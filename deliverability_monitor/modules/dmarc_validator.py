@@ -254,8 +254,17 @@ def run() -> dict:
         writer.write_points(all_points)
 
     if alert_domains:
+        _first = alert_domains[0]
+        _issues = []
+        if not _first["result"]["dmarc"]["valid"]:
+            _issues.append(f"DMARC invalid ({_first['result']['dmarc']['error'][:60]})")
+        if not _first["result"]["spf"]["valid"]:
+            _issues.append(f"SPF invalid ({_first['result']['spf']['error'][:60]})")
+        _subject = f"DNS fail — {_first['domain']}: {'; '.join(_issues) or 'score {:.0f}'.format(_first['score'])}"
+        if len(alert_domains) > 1:
+            _subject += f" (+{len(alert_domains) - 1} more)"
         send_alert(
-            subject="⚠️ DNS Config Alert",
+            subject=_subject,
             body={
                 "event": "dns_validation_failed",
                 "domains": [
