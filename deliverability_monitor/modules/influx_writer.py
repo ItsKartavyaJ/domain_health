@@ -165,6 +165,23 @@ class InfluxWriter:
         )
 
 
+    @staticmethod
+    def alert_point(
+        event: str,
+        domain: str,
+        subject: str,
+        sent: bool,
+    ) -> Point:
+        return (
+            Point("alert_history")
+            .tag("event", event)
+            .tag("domain", domain)
+            .field("subject", subject[:500])
+            .field("sent", int(sent))
+            .time(datetime.now(timezone.utc), WritePrecision.S)
+        )
+
+
 class _LazyWriter:
     """Defers InfluxWriter construction until first write_points() call.
     This avoids crashing at import time when INFLUXDB_TOKEN is missing."""

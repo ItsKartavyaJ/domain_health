@@ -436,11 +436,12 @@ router.get('/campaign-stats', async (req, res) => {
       for (const page of chunkPages) {
         for (const c of page) {
           const id = String(c.id);
-          if (!byId.has(id)) byId.set(id, { id: c.id, campaign_name: c.campaign_name, sent: 0, opened: 0, replied: 0, bounced: 0, positive_replied: 0 });
+          if (!byId.has(id)) byId.set(id, { id: c.id, campaign_name: c.campaign_name, sent: 0, opened: 0, replied: 0, bounced: 0, positive_replied: 0, unsubscribed: 0 });
           const acc = byId.get(id);
           acc.sent += num(c.sent); acc.opened += num(c.opened);
           acc.replied += num(c.replied); acc.bounced += num(c.bounced);
           acc.positive_replied += num(c.positive_replied);
+          acc.unsubscribed += num(c.unsubscribed);
         }
       }
 
@@ -453,10 +454,12 @@ router.get('/campaign-stats', async (req, res) => {
         replied: c.replied,
         bounced: c.bounced,
         positive_replied: c.positive_replied,
+        unsubscribed: c.unsubscribed,
         open_rate: c.sent > 0 ? Math.round((c.opened / c.sent) * 10000) / 100 : 0,
         reply_rate: c.sent > 0 ? Math.round((c.replied / c.sent) * 10000) / 100 : 0,
         bounce_rate: c.sent > 0 ? Math.round((c.bounced / c.sent) * 10000) / 100 : 0,
         positive_reply_rate: c.sent > 0 ? Math.round((c.positive_replied / c.sent) * 10000) / 100 : 0,
+        unsubscribe_rate: c.sent > 0 ? Math.round((c.unsubscribed / c.sent) * 10000) / 100 : 0,
       }));
     });
     res.json({ ok: true, data });
@@ -532,6 +535,11 @@ router.post('/inbox-replies', async (req, res) => {
     res.status(500).json({ error: 'Failed to load inbox replies' });
   }
 });
+
+export function clearCache() {
+  _cache.clear();
+  _inflight.clear();
+}
 
 export default router;
 

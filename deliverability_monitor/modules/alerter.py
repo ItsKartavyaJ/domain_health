@@ -16,6 +16,7 @@ from typing import Any, Dict
 import requests
 
 from config.settings import alerts as cfg
+from modules.influx_writer import writer as _influx_writer, InfluxWriter
 
 log = logging.getLogger(__name__)
 
@@ -74,14 +75,22 @@ def send_alert(subject: str, body: Dict[str, Any]) -> bool:
         **body,
     }
 
+    delivered = False
     try:
         r = requests.post(cfg.webhook_url, json=payload, timeout=10)
         if r.status_code in (200, 201, 202):
             log.info("Alert sent: %s", subject)
-            return True
+            delivered = True
         else:
             log.warning("Alert webhook returned %d: %s", r.status_code, r.text[:200])
-            return False
     except Exception as e:
         log.error("Alert dispatch failed (%s): %s", subject, e)
-        return False
+
+    try:
+        _influx_writer.write_points([InfluxWriter.alert_point(
+            event=event, domain=domain, subject=subject, sent=delivered,
+        )])
+    except Exception as e:
+        log.warning("Failed to write alert history to InfluxDB: %s", e)
+
+    return delivered

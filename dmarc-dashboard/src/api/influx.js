@@ -60,6 +60,10 @@ export function getDmarcSources() {
   return cached('/api/metrics/dmarc-sources', () => authFetch('/api/metrics/dmarc-sources').then((j) => j.sources || []));
 }
 
+export function getAlertHistory() {
+  return cached('/api/metrics/alert-history', () => authFetch('/api/metrics/alert-history').then((j) => j.alerts || []));
+}
+
 export async function refreshDomainStats() {
   const token = await getIdToken();
   const res = await fetch('/api/metrics/refresh', {

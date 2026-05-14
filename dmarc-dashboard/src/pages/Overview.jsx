@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import DomainCard from '../components/DomainCard';
 import DomainTable from '../components/DomainTable';
-import { getDomainStats, refreshDomainStats, getSpfGaps, getDomainTrend } from '../api/influx';
+import { getDomainStats, refreshDomainStats, getSpfGaps, getDomainTrend, getAlertHistory } from '../api/influx';
 
 function StatPill({ label, value, sub, color }) {
   return (
@@ -178,12 +178,52 @@ function InsightsPanel({ domains, spfGaps }) {
   );
 }
 
+const EVENT_LABELS = {
+  blacklist_detected: 'Blacklist',
+  dns_validation_failed: 'DNS fail',
+  high_spam_rate: 'High spam',
+  warmup_high_spam: 'Warmup spam',
+  mailbox_reconnect_required: 'Reconnect',
+  high_campaign_bounce_rate: 'High bounce',
+  postmaster_poor_reputation: 'Reputation',
+  daily_digest: 'Digest',
+};
+
+function AlertHistoryPanel({ alerts }) {
+  if (alerts.length === 0) return null;
+  return (
+    <div style={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', marginBottom: 28 }}>
+      <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)' }}>
+        <div style={{ fontSize: 14, fontWeight: 600 }}>Recent Alerts</div>
+        <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>Last 7 days · {alerts.length} fired</div>
+      </div>
+      <div>
+        {alerts.slice(0, 8).map((a, i) => {
+          const d = new Date(a.time);
+          const ts = isNaN(d.getTime()) ? a.time : new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(d);
+          const label = EVENT_LABELS[a.event] || a.event;
+          return (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 18px', borderBottom: i < Math.min(alerts.length, 8) - 1 ? '1px solid var(--border)' : 'none' }}>
+              <div style={{ width: 6, height: 6, borderRadius: '50%', background: a.sent ? 'var(--ok-text)' : 'var(--warn-text)', flexShrink: 0 }} />
+              <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 7px', borderRadius: 6, background: 'var(--surface)', color: 'var(--muted)', whiteSpace: 'nowrap' }}>{label}</span>
+              {a.domain && <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.domain}</span>}
+              <span style={{ fontSize: 12, color: 'var(--muted)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.subject}</span>
+              <span style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap', marginLeft: 'auto', flexShrink: 0 }}>{ts}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function Overview() {
-  const [domains, setDomains]       = useState([]);
-  const [loading, setLoading]       = useState(true);
-  const [error, setError]           = useState(null);
-  const [spfGaps, setSpfGaps]       = useState({});
-  const [trendMap, setTrendMap]     = useState({});
+  const [domains, setDomains]           = useState([]);
+  const [loading, setLoading]           = useState(true);
+  const [error, setError]               = useState(null);
+  const [spfGaps, setSpfGaps]           = useState({});
+  const [trendMap, setTrendMap]         = useState({});
+  const [alertHistory, setAlertHistory] = useState([]);
 
   function fetchData() {
     setLoading(true);
@@ -198,6 +238,7 @@ export default function Overview() {
       for (const t of trends) map[t.domain] = t;
       setTrendMap(map);
     }).catch(() => {});
+    getAlertHistory().then(setAlertHistory).catch(() => {});
   }
 
   useEffect(() => { fetchData(); }, []);
@@ -207,9 +248,10 @@ export default function Overview() {
     fetchData();
   }
 
-  const totalEmails = domains.reduce((s, d) => s + d.total, 0);
-  const avgScore    = domains.length ? Math.round(domains.reduce((s, d) => s + d.score, 0) / domains.length) : 0;
-  const healthy     = domains.filter(d => d.status === 'ok').length;
+  const totalEmails    = domains.reduce((s, d) => s + d.total, 0);
+  const avgScore       = domains.length ? Math.round(domains.reduce((s, d) => s + d.score, 0) / domains.length) : 0;
+  const avgHealthScore = domains.length ? Math.round(domains.reduce((s, d) => s + (d.health_score ?? d.score), 0) / domains.length) : 0;
+  const healthy        = domains.filter(d => d.status === 'ok').length;
 
   return (
     <main style={{ maxWidth: 1280, margin: '0 auto', padding: '28px 24px 48px' }}>
@@ -238,9 +280,11 @@ export default function Overview() {
       ) : error ? (
         <div style={{ background: 'var(--err-bg)', color: 'var(--err-text)', borderRadius: 10, padding: '14px 20px', fontSize: 13, marginBottom: 28 }}>{error}</div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: 12, marginBottom: 28 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0,1fr))', gap: 12, marginBottom: 28 }}>
           <StatPill label="Domains" value={domains.length} sub="monitored" />
-          <StatPill label="Avg DMARC score" value={`${avgScore}%`} sub={avgScore >= 80 ? 'above target' : avgScore >= 50 ? 'below 80% target' : 'critical — below 50%'}
+          <StatPill label="Avg health score" value={avgHealthScore} sub="DMARC + SPF + DKIM"
+            color={avgHealthScore >= 80 ? 'var(--ok-text)' : avgHealthScore >= 50 ? 'var(--warn-text)' : 'var(--err-text)'} />
+          <StatPill label="Avg DMARC pass" value={`${avgScore}%`} sub={avgScore >= 80 ? 'above target' : avgScore >= 50 ? 'below 80% target' : 'critical — below 50%'}
             color={avgScore >= 80 ? 'var(--ok-text)' : avgScore >= 50 ? 'var(--warn-text)' : 'var(--err-text)'} />
           <StatPill label="Total emails" value={totalEmails.toLocaleString()} sub="last 30 days" />
           <StatPill label="Healthy domains" value={healthy} sub={domains.length - healthy === 0 ? 'all clear' : `${domains.length - healthy} need attention`}
@@ -250,6 +294,9 @@ export default function Overview() {
 
       {/* Insights panel — only after domains load */}
       {!loading && !error && <InsightsPanel domains={domains} spfGaps={spfGaps} />}
+
+      {/* Alert history */}
+      {!loading && alertHistory.length > 0 && <AlertHistoryPanel alerts={alertHistory} />}
 
       {/* Top domain cards */}
       {!loading && domains.length > 0 && (

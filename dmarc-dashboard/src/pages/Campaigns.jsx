@@ -114,16 +114,18 @@ export default function Campaigns() {
       return sort.dir === 'desc' ? bv - av : av - bv;
     });
 
-  const totalSent     = campaigns.reduce((s, c) => s + (c.sent || 0), 0);
-  const totalOpened   = campaigns.reduce((s, c) => s + (c.opened || 0), 0);
-  const totalReplied  = campaigns.reduce((s, c) => s + (c.replied || 0), 0);
-  const totalPositive = campaigns.reduce((s, c) => s + (c.positive_replied || 0), 0);
+  const totalSent         = campaigns.reduce((s, c) => s + (c.sent || 0), 0);
+  const totalOpened       = campaigns.reduce((s, c) => s + (c.opened || 0), 0);
+  const totalReplied      = campaigns.reduce((s, c) => s + (c.replied || 0), 0);
+  const totalPositive     = campaigns.reduce((s, c) => s + (c.positive_replied || 0), 0);
+  const totalUnsubscribed = campaigns.reduce((s, c) => s + (c.unsubscribed || 0), 0);
 
   const funnelData = [
     { name: 'Sent', value: totalSent, fill: '#3B82F6' },
     { name: 'Opened', value: totalOpened, fill: '#8B5CF6' },
     { name: 'Replied', value: totalReplied, fill: '#F59E0B' },
     { name: 'Positive', value: totalPositive, fill: '#22C55E' },
+    { name: 'Unsub', value: totalUnsubscribed, fill: '#EF4444' },
   ];
 
   const dailyChartData = daily
@@ -133,6 +135,7 @@ export default function Campaigns() {
       sent: d.sent || 0,
       opened: d.opened || 0,
       replied: d.replied || 0,
+      unsubscribed: d.unsubscribed || 0,
     }))
     .sort((a, b) => a.dateMs - b.dateMs);
 
@@ -200,6 +203,7 @@ export default function Campaigns() {
                 <Area type="monotone" dataKey="sent" stroke="#3B82F6" fill="var(--info-bg)" strokeWidth={2} dot={false} activeDot={{ r: 3 }} name="Sent" />
                 <Area type="monotone" dataKey="opened" stroke="#8B5CF6" fill="rgba(139,92,246,0.1)" strokeWidth={2} dot={false} activeDot={{ r: 3 }} name="Opened" />
                 <Area type="monotone" dataKey="replied" stroke="#22C55E" fill="var(--ok-bg)" strokeWidth={2} dot={false} activeDot={{ r: 3 }} name="Replied" />
+                <Area type="monotone" dataKey="unsubscribed" stroke="#EF4444" fill="var(--err-bg)" strokeWidth={1.5} dot={false} activeDot={{ r: 3 }} name="Unsub" />
               </AreaChart>
             </ResponsiveContainer>
           ) : (
@@ -251,6 +255,7 @@ export default function Campaigns() {
                     { key: 'positive_replied', label: 'Positive' },
                     { key: 'bounced', label: 'Bounced' },
                     { key: 'bounce_rate', label: 'Bounce Rate' },
+                    { key: 'unsubscribed', label: 'Unsub' },
                   ].map(({ key, label }) => (
                     <th
                       key={key}
@@ -264,7 +269,7 @@ export default function Campaigns() {
               </thead>
               <tbody>
                 {filtered.length === 0 && (
-                  <tr><td colSpan={10} style={{ padding: '32px 18px', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>No campaigns found</td></tr>
+                  <tr><td colSpan={11} style={{ padding: '32px 18px', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>No campaigns found</td></tr>
                 )}
                 {filtered.map((c, i) => (
                   <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
@@ -286,6 +291,7 @@ export default function Campaigns() {
                         {c.bounce_rate ? `${Math.round(c.bounce_rate * 100) / 100}%` : '0%'}
                       </Badge>
                     </td>
+                    <td style={{ padding: '12px 14px', fontSize: 13, color: (c.unsubscribed || 0) > 0 ? 'var(--err-text)' : 'var(--muted)' }}>{(c.unsubscribed || 0).toLocaleString()}</td>
                   </tr>
                 ))}
               </tbody>

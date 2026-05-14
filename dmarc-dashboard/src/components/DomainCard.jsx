@@ -1,8 +1,9 @@
-export default function DomainCard({ domain, score, rate, spf, dkim, total, status, lastReport }) {
+export default function DomainCard({ domain, score, health_score, rate, spf, dkim, total, status, lastReport }) {
+  const ringValue = health_score ?? score;
   const accent = status === 'ok' ? '#22C55E' : status === 'warn' ? '#F59E0B' : '#EF4444';
   const accentBg = status === 'ok' ? 'var(--ok-bg)' : status === 'warn' ? 'var(--warn-bg)' : 'var(--err-bg)';
   const accentText = status === 'ok' ? 'var(--ok-text)' : status === 'warn' ? 'var(--warn-text)' : 'var(--err-text)';
-  const dash = Math.round((score / 100) * 113);
+  const dash = Math.round((ringValue / 100) * 113);
 
   const spfColor = spf === 'Pass' ? 'var(--ok-text)' : spf === 'Partial' ? 'var(--warn-text)' : 'var(--err-text)';
   const dkimColor = dkim === 'Pass' ? 'var(--ok-text)' : 'var(--err-text)';
@@ -31,7 +32,7 @@ export default function DomainCard({ domain, score, rate, spf, dkim, total, stat
               strokeDasharray={`${dash} 119`} strokeDashoffset="30" strokeLinecap="round"/>
           </svg>
           <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: accentText }}>
-            {score}
+            {ringValue}
           </div>
         </div>
       </div>

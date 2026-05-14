@@ -151,6 +151,25 @@ cd ~/domain_health && bash scripts/redeploy.sh
 ```
 Rebuilds parsedmarc Docker image, restarts all containers, reinstalls Python venv, rebuilds React bundle, restarts both systemd services. Data volumes are untouched.
 
+
+# Code Navigation Rules
+
+## ALWAYS use code-review-graph before reading files
+
+When investigating any feature, bug, or function:
+
+1. **Start with the graph** — never open files cold
+   - `query_graph pattern="all_nodes"` to orient
+   - `query_graph pattern="callers_of" node="<function>"` to trace usage
+   - `query_graph pattern="imports_of" node="<file>"` to find dependencies
+   - `semantic_search_nodes keyword="<feature term>"` to locate relevant nodes
+
+2. **Only read files the graph points you to** — not the whole tree
+
+3. **Never use grep/glob to discover structure** — ask the graph instead
+
+This saves tokens. The graph has 376 nodes and 3963 edges already indexed.
+
 ## Development Notes
 
 - Local dev: run `npm run dev` (Vite at :5173) + `npm run dev:api` (API at :8787); Vite proxies `/api` to :8787

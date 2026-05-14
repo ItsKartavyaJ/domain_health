@@ -4,7 +4,7 @@ import { initializeApp, getApps } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import smartleadRouter, { fetchDomainHealthForRange, fetchMailboxHealthForRange, fetchCurrentEmailSet } from './smartlead.js';
+import smartleadRouter, { fetchDomainHealthForRange, fetchMailboxHealthForRange, fetchCurrentEmailSet, clearCache as clearSmartleadCache } from './smartlead.js';
 
 dotenv.config();
 
@@ -252,19 +252,25 @@ from(bucket: "${INFLUX_BUCKET}")
       const spfRate = total > 0 ? Math.round((spfAligned / total) * 100) : 0;
       const dkimRate = total > 0 ? Math.round((dkimAligned / total) * 100) : 0;
 
+      const spf = spfRate > 95 ? 'Pass' : spfRate > 70 ? 'Partial' : 'Fail';
+      const dkim = dkimRate > 95 ? 'Pass' : 'Fail';
+      const healthScore = Math.round(
+        (rate * 0.5) +
+        (spf === 'Pass' ? 25 : spf === 'Partial' ? 10 : 0) +
+        (dkim === 'Pass' ? 25 : 0)
+      );
       return {
         domain: r.header_from || 'unknown',
         total,
         passed,
         rate,
         score: rate,
-        spf: spfRate > 95 ? 'Pass' : spfRate > 70 ? 'Partial' : 'Fail',
-        dkim: dkimRate > 95 ? 'Pass' : 'Fail',
+        health_score: healthScore,
+        spf,
+        dkim,
         lastReport: 'recently',
         trend: 0,
         status: (() => {
-          const spf = spfRate > 95 ? 'Pass' : spfRate > 70 ? 'Partial' : 'Fail';
-          const dkim = dkimRate > 95 ? 'Pass' : 'Fail';
           if (dkim === 'Fail' || rate <= 50) return 'err';
           if (spf !== 'Pass' || rate <= 80) return 'warn';
           return 'ok';
@@ -389,6 +395,7 @@ app.post('/api/metrics/refresh', authMiddleware, rateLimitMiddleware, (_req, res
   _domainStatsCache = null;
   _domainStatsCachedAt = 0;
   _domainStatsInflight = null;
+  clearSmartleadCache();      // also bust the Smartlead 90-min server cache
   return res.json({ ok: true });
 });
 
@@ -869,6 +876,50 @@ from(bucket: "${INFLUX_DELIVERABILITY_BUCKET}")
   } catch (err) {
     console.error('[sender-health]', err.message);
     return res.status(500).json({ error: 'Failed to load sender health' });
+  }
+});
+
+app.get('/api/metrics/alert-history', authMiddleware, rateLimitMiddleware, async (_req, res) => {
+  try {
+    let rows;
+    try {
+      rows = await queryFlux(`
+from(bucket: "${INFLUX_DELIVERABILITY_BUCKET}")
+  |> range(start: -7d)
+  |> filter(fn: (r) => r._measurement == "alert_history")
+  |> filter(fn: (r) => r._field == "subject" or r._field == "sent")
+  |> map(fn: (r) => ({
+      _time: r._time,
+      _measurement: r._measurement,
+      event: r.event,
+      domain: r.domain,
+      _field: r._field,
+      _value: string(v: r._value),
+    }))
+  |> group(columns: ["_measurement", "event", "domain", "_field"])
+  |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
+  |> sort(columns: ["_time"], desc: true)
+  |> limit(n: 50)
+`);
+    } catch (err) {
+      if (err instanceof InfluxError && (err.status === 404 || err.status === 422 || err.status === 503)) {
+        return res.json({ ok: true, alerts: [] });
+      }
+      throw err;
+    }
+    const alerts = rows
+      .filter((r) => r._time)
+      .map((r) => ({
+        time: String(r._time),
+        event: r.event || '',
+        domain: r.domain || '',
+        subject: r.subject || '',
+        sent: r.sent === '1' || Number(r.sent) === 1,
+      }));
+    return res.json({ ok: true, alerts });
+  } catch (err) {
+    console.error('[alert-history]', err.message);
+    return res.status(500).json({ error: 'Failed to load alert history' });
   }
 });
 

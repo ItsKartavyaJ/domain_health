@@ -12,12 +12,14 @@ import WarmupDetail from './pages/WarmupDetail';
 import WarmupStats from './pages/WarmupStats';
 import Issues from './pages/Issues';
 import SenderHealth from './pages/SenderHealth';
+import Sequences from './pages/Sequences';
 
 const tabs = [
   { key: 'overview', label: 'Overview' },
   { key: 'replies', label: 'Replies' },
   { key: 'mailboxes', label: 'Mailboxes' },
   { key: 'campaigns', label: 'Campaigns' },
+  { key: 'sequences', label: 'Sequences' },
   { key: 'domains', label: 'Domains' },
   { key: 'sender-health', label: 'Sender Health' },
   { key: 'warmup-stats', label: 'Warmup' },
@@ -42,6 +44,7 @@ const tabComponents = {
   'warmup-stats': WarmupStats,
   issues: Issues,
   'sender-health': SenderHealth,
+  sequences: Sequences,
 };
 
 export default function App() {
