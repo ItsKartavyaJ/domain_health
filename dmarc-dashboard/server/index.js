@@ -896,8 +896,9 @@ from(bucket: "${INFLUX_DELIVERABILITY_BUCKET}")
       _field: r._field,
       _value: string(v: r._value),
     }))
-  |> group(columns: ["_measurement", "event", "domain", "_field"])
+  |> group(columns: ["event", "domain"])
   |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
+  |> group()
   |> sort(columns: ["_time"], desc: true)
   |> limit(n: 50)
 `);
@@ -908,7 +909,7 @@ from(bucket: "${INFLUX_DELIVERABILITY_BUCKET}")
       throw err;
     }
     const alerts = rows
-      .filter((r) => r._time)
+      .filter((r) => r._time && !isNaN(new Date(String(r._time)).getTime()))
       .map((r) => ({
         time: String(r._time),
         event: r.event || '',

@@ -187,6 +187,7 @@ const EVENT_LABELS = {
   high_campaign_bounce_rate: 'High bounce',
   postmaster_poor_reputation: 'Reputation',
   daily_digest: 'Digest',
+  spf_ip_not_authorized: 'SPF gap',
 };
 
 function AlertHistoryPanel({ alerts }) {
